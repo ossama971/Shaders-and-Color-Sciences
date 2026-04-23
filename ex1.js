@@ -19,9 +19,8 @@ const VIDEO_PATH = "./Assests/video.mp4";
 // SUBSAMPLE_FACTOR: 1 = every pixel, 4 = every 4th pixel in each direction.
 // Increase for better performance; decrease for higher point count.
 
-const SUBSAMPLE_FACTOR = 1;
-const SHADOW_SUBSAMPLE_MULTI = 4; // shadow uses less points as direct
-const DENSITY_SUBSAMPLE_MULTI = 1; // density uses more points
+const SUBSAMPLE_FACTOR = 4;
+const SHADOW_SUBSAMPLE_MULTI = 2;
 
 // ============================================================================
 // COLOR SPACE CONFIGURATION
@@ -137,56 +136,21 @@ const COLOR_SPACES = {
 function getShaderSource(id) {
   const el = document.getElementById(id);
   if (!el) throw new Error(`Missing shader element #${id} in the html file`);
-  return el.textContent.trim(); // to catch accidental whitespace errors.
-}
-/** Replaces a token in a shader source string with the given replacement. */
-function injectToken(src, token, replacement, label) {
-  if (!src.includes(token)) {
-    //throw error if token is not found
-    throw new Error(`Token "${token}" not found while building ${label}.`);
-  }
-  return src.replace(token, replacement);
+  return el.textContent.trim();
 }
 
 // Read raw sources from HTML blocks
 const CONVERSIONS_SRC = getShaderSource("shaderConversions"); // convert in GLSL for faster GPU execution especially for video mode
 const TEX_VERT = getShaderSource("texVertexShader");
 const TEX_FRAG = getShaderSource("texFragmentShader");
-const POINTS_FRAG = getShaderSource("pointsFragmentShader");
-const DENSITY_FRAG = getShaderSource("densityFragmentShader");
+const CLOUD_FRAG = getShaderSource("cloudFragmentShader");
 const SHADOW_FRAG = getShaderSource("shadowFragmentShader");
 
-// Build points vertex shader:
-//   1. Inject conversions library at the __SHADER_CONVERSIONS__ token.
-//   2. Set point-size expression at the __POINT_SIZE__ token.
-const POINTS_VERT_BASE = injectToken(
-  getShaderSource("pointsVertexShader"),
-  "__SHADER_CONVERSIONS__",
-  CONVERSIONS_SRC,
-  "pointsVertexShader",
-);
-
-// different point size depending on visual mode.
-const POINTS_VERT = injectToken(
-  POINTS_VERT_BASE,
-  "__POINT_SIZE__",
-  "max(6.0 / -mvPos.z, 1.0)",
-  "POINTS_VERT",
-); // points size changes with distance for better visibility; minimum size of 1.0 to avoid disappearing when far away
-const DENSITY_VERT = injectToken(
-  POINTS_VERT_BASE,
-  "__POINT_SIZE__",
-  "max(14.0 / -mvPos.z, 1.0)", // larger points for density shader to make clusters more visible; minimum size of 1.0 to avoid disappearing when far away
-  "DENSITY_VERT",
-); // larger points for density shader
-
-// Shadow vertex shader also uses the conversions library
-const SHADOW_VERT = injectToken(
-  getShaderSource("shadowVertexShader"),
-  "__SHADER_CONVERSIONS__",
-  CONVERSIONS_SRC,
-  "shadowVertexShader",
-);
+// Prepend the shared conversion functions to both vertex shaders
+const CLOUD_VERT =
+  CONVERSIONS_SRC + "\n" + getShaderSource("cloudVertexShader");
+const SHADOW_VERT =
+  CONVERSIONS_SRC + "\n" + getShaderSource("shadowVertexShader");
 
 // ============================================================================
 // SCENE HELPERS
@@ -486,7 +450,7 @@ function createGUI(app) {
     colorSpace: "sRGB",
     visualMode: "direct",
     showShadows: true,
-    subsample: 1,
+    subsample: SUBSAMPLE_FACTOR,
   };
 
   // Color space selector
@@ -525,7 +489,7 @@ function createGUI(app) {
     .name("Show Shadows")
     .onChange((v) => {
       const shadow = app.colorSpaceGroup.getObjectByName("pointCloudShadow");
-      if (shadow) shadow.visible = v && params.visualMode === "direct";
+      if (shadow) shadow.visible = v;
     });
 
   gui
@@ -542,15 +506,9 @@ function createGUI(app) {
         directCloud.geometry = buildPointGeometry(app.sourceW, app.sourceH, v);
       }
 
-      // density uses its own multiplier on top of the user subsample
       if (densityCloud) {
-        const densitySub = Math.max(1, Math.ceil(v / DENSITY_SUBSAMPLE_MULTI));
         densityCloud.geometry.dispose();
-        densityCloud.geometry = buildPointGeometry(
-          app.sourceW,
-          app.sourceH,
-          densitySub,
-        );
+        densityCloud.geometry = buildPointGeometry(app.sourceW, app.sourceH, v);
       }
     });
 
@@ -565,9 +523,14 @@ function createGUI(app) {
         const metadata = await loadVideoSource(VIDEO_PATH);
         displayTex = metadata.displayTex;
         shaderTex = metadata.shaderTex;
+        app.videoEl = metadata.videoEl;
         w = metadata.videoEl.videoWidth;
         h = metadata.videoEl.videoHeight;
       } else {
+        if (app.videoEl) {
+          app.videoEl.pause();
+          app.videoEl = null;
+        }
         const res = await loadImageSource(IMAGE_PATH);
         displayTex = res.displayTex;
         shaderTex = res.shaderTex;
@@ -585,12 +548,11 @@ function createGUI(app) {
       if (w !== app.sourceW || h !== app.sourceH) {
         app.sourceW = w;
         app.sourceH = h;
-        const dSub = Math.ceil(SUBSAMPLE_FACTOR / DENSITY_SUBSAMPLE_MULTI);
         const dc = app.colorSpaceGroup.getObjectByName("pointCloud");
         const dn = app.colorSpaceGroup.getObjectByName("pointCloudDensity");
         const sh = app.colorSpaceGroup.getObjectByName("pointCloudShadow");
         if (dc) dc.geometry = buildPointGeometry(w, h, SUBSAMPLE_FACTOR);
-        if (dn) dn.geometry = buildPointGeometry(w, h, dSub);
+        if (dn) dn.geometry = buildPointGeometry(w, h, SUBSAMPLE_FACTOR);
         if (sh)
           sh.geometry = buildPointGeometry(
             w,
@@ -601,6 +563,27 @@ function createGUI(app) {
         if (app.densityUniforms) app.densityUniforms.texSize.value.set(w, h);
       }
     });
+
+  const videoControls = {
+    playPause() {
+      if (!app.videoEl) return;
+      app.videoEl.paused ? app.videoEl.play() : app.videoEl.pause();
+    },
+    seekBack() {
+      if (app.videoEl)
+        app.videoEl.currentTime = Math.max(0, app.videoEl.currentTime - 10);
+    },
+    seekForward() {
+      if (app.videoEl)
+        app.videoEl.currentTime = Math.min(
+          app.videoEl.duration,
+          app.videoEl.currentTime + 10,
+        );
+    },
+  };
+  gui.add(videoControls, "seekBack").name("◀◀ -10s");
+  gui.add(videoControls, "playPause").name("⏯ Play / Pause");
+  gui.add(videoControls, "seekForward").name("▶▶ +10s");
 
   return gui;
 }
@@ -661,14 +644,16 @@ export async function initExercise1() {
     pointsTex: { value: shaderTex },
     texSize: { value: new THREE.Vector2(imgW, imgH) },
     colorSpaceMode: { value: csMode },
+    pointSizeBase: { value: 6.0 },
+    renderMode: { value: 0 },
   };
 
   const directMat = new THREE.ShaderMaterial({
     uniforms: pointsUniforms,
-    vertexShader: POINTS_VERT,
-    fragmentShader: POINTS_FRAG,
-    transparent: false, // opaque cloud
-    depthWrite: true, // write to depth buffer so points occlude cube walls
+    vertexShader: CLOUD_VERT,
+    fragmentShader: CLOUD_FRAG,
+    transparent: false,
+    depthWrite: true,
   });
 
   const directCloud = new THREE.Points(
@@ -683,22 +668,24 @@ export async function initExercise1() {
   colorSpaceGroup.add(directCloud); // add the direct cloud to the color space group on the right side
 
   // Density point cloud
-  const densitySub = Math.ceil(SUBSAMPLE_FACTOR / DENSITY_SUBSAMPLE_MULTI);
-  const densityGeometry = buildPointGeometry(imgW, imgH, densitySub);
+  const densityGeometry = buildPointGeometry(imgW, imgH, SUBSAMPLE_FACTOR);
 
   const densityUniforms = {
     pointsTex: { value: shaderTex },
     texSize: { value: new THREE.Vector2(imgW, imgH) },
     colorSpaceMode: { value: csMode },
+    pointSizeBase: { value: 14.0 },
+    renderMode: { value: 1 },
   };
 
   const densityMaterial = new THREE.ShaderMaterial({
     uniforms: densityUniforms,
-    vertexShader: DENSITY_VERT, // larger points
-    fragmentShader: DENSITY_FRAG, //linear splat shader
-    transparent: true, // additive blending relies on transparency
-    depthWrite: false, // turn off depth buffer writes so points don't occlude each other
-    blending: THREE.AdditiveBlending, // additive blending for glow effect in dense regions
+    vertexShader: CLOUD_VERT,
+    fragmentShader: CLOUD_FRAG,
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    blending: THREE.AdditiveBlending,
   });
 
   const densityCloud = new THREE.Points(densityGeometry, densityMaterial);
@@ -756,6 +743,7 @@ export async function initExercise1() {
     sourceW: imgW,
     sourceH: imgH,
     startTime: Date.now(),
+    videoEl: null,
   };
 
   createGUI(app);

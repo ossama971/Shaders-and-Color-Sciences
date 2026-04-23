@@ -109,14 +109,13 @@
         return vec3(lab.x,C,hNorm);
       }
     </script>
-    <script type="x-shader/x-vertex" id="pointsVertexShader">
+    <script type="x-shader/x-vertex" id="cloudVertexShader">
       uniform sampler2D pointsTex;
       uniform vec2 texSize;
       uniform int  colorSpaceMode; // 0=RGB 1=HSV 2=CIEXYZ 3=CIExyY 4=CIELAB 5=CIELCH
+      uniform float pointSizeBase; // 6.0=direct  14.0=density
       attribute vec2 gridUV;
       varying vec3 vColor;
-
-      __SHADER_CONVERSIONS__ // token to be replaced by the shader conversions library
 
       void main() {
         vec3 srgb = texture2D(pointsTex, gridUV).rgb;
@@ -168,33 +167,26 @@
 
         vColor = srgb; // pass raw sRGB to fragment for displaying each point in its original colour
         vec4 mvPos = modelViewMatrix * vec4(pos, 1.0);
-        gl_PointSize = __POINT_SIZE__; //token to be replaced
+        gl_PointSize = max(pointSizeBase / -mvPos.z, 1.0);
         gl_Position  = projectionMatrix * mvPos;
       }
     </script>
 
-    <script type="x-shader/x-fragment" id="pointsFragmentShader">
+    <script type="x-shader/x-fragment" id="cloudFragmentShader">
+      uniform int renderMode; // 0=direct  1=density
       varying vec3 vColor;
 
       void main() {
         float dist = length(gl_PointCoord - vec2(0.5));
-        if (dist > 0.5) discard; // clip to circle
-        gl_FragColor = vec4(vColor, 1.0);
-      }
-    </script>
+        if (dist > 0.5) discard;
 
-    <script type="x-shader/x-fragment" id="densityFragmentShader">
-      varying vec3 vColor;
-
-      void main() {
-        float dist = length(gl_PointCoord - vec2(0.5));
-        if(dist > 0.5) discard; //create circle shapes
-
-        float weight = 1.0 - (dist * 2.0); // 0 at edges, 1.0 at center => linear fadding
-        if(weight < 0.1) discard; // discard very faint fragments to improve performance and avoid large crowds of points creating big blobs
-        float alpha = 0.05;
-
-        gl_FragColor = vec4(vColor * weight, weight * alpha); // fadding in point color and in alpha
+        if (renderMode == 1) {
+          float weight = 1.0 - (dist * 2.0); // linear falloff: 1 at centre, 0 at edge
+          if (weight < 0.15) discard;
+          gl_FragColor = vec4(vColor * weight, weight * 0.2);
+        } else {
+          gl_FragColor = vec4(vColor, 1.0);
+        }
       }
     </script>
 
@@ -223,8 +215,6 @@
       attribute vec2    gridUV;
       varying float     vAlpha;
 
-      __SHADER_CONVERSIONS__
-
       void main() {
         vec3 srgb = texture2D(pointsTex, gridUV).rgb;
         vec3 pos;
@@ -237,7 +227,7 @@
         } else {
           // Default (RGB and all CIE modes): project using R and G as x/z
           pos    = vec3(srgb.r - 0.5, shadowY, srgb.g - 0.5);
-          vAlpha = 0.40 * srgb.b; //fade by b, and lumincance in CIE models
+          vAlpha = 0.25 * srgb.b; //fade by b, and lumincance in CIE models
         }
 
         vec4 mvPos = modelViewMatrix * vec4(pos, 1.0);
@@ -272,9 +262,7 @@
     </script>
 
     <script type="module">
-      import { initExercise1, animateExercise1 } from "./ex1_hints.js";
-      // import { initExercise1, animateExercise1 } from "./ex1_solution.js";
-
+      import { initExercise1, animateExercise1 } from "./ex1.js";
       const app = await initExercise1();
       animateExercise1(app);
     </script>
