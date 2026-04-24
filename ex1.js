@@ -5,6 +5,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import GUI from "lil-gui";
+import { createXRCompatibleRenderer, setupXRExperience } from "./xr_support.js";
 
 // ============================================================================
 // ASSET PATH
@@ -605,7 +606,7 @@ export async function initExercise1() {
   camera.position.set(0, 0.75, 3);
   camera.lookAt(0, 0.75, 0);
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  const renderer = createXRCompatibleRenderer({ antialias: true, alpha: true });
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.setPixelRatio(window.devicePixelRatio || 1);
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -746,6 +747,20 @@ export async function initExercise1() {
     videoEl: null,
   };
 
+  Object.assign(
+    app,
+    setupXRExperience({
+      scene,
+      camera,
+      renderer,
+      controls,
+      title: "Exercise 1",
+      description: "Explore color-space point clouds in VR and AR.",
+      arWorldYOffset: -0.25,
+      xrWorldZOffset: -2.25,
+    }),
+  );
+
   createGUI(app);
   return app;
 }
@@ -755,10 +770,10 @@ export async function initExercise1() {
 // ============================================================================
 
 export function animateExercise1(app) {
-  function animate() {
-    requestAnimationFrame(animate);
-    app.controls.update();
+  app.renderer.setAnimationLoop(() => {
+    if (!app.renderer.xr.isPresenting) {
+      app.controls.update();
+    }
     app.renderer.render(app.scene, app.camera);
-  }
-  animate();
+  });
 }
