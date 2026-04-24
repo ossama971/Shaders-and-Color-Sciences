@@ -85,8 +85,8 @@ function applyWorldPlacement(worldRoot, config, session) {
 
   worldRoot.position.set(
     session ? config.xrWorldXOffset : 0,
-    session ? (isPassthrough ? config.arWorldYOffset : 0) : 0,
-    session ? config.xrWorldZOffset : 0,
+    session ? (isPassthrough ? config.arWorldYOffset : -0.75) : 0,
+    session ? (isPassthrough ? config.xrWorldZOffset : -1.75) : 0,
   );
 
   worldRoot.rotation.set(
@@ -118,8 +118,8 @@ export function setupXRExperience({
   title,
   description,
   xrWorldXOffset = 0,
-  arWorldYOffset = 0,
-  xrWorldZOffset = -2.5,
+  arWorldYOffset = -0.5,
+  xrWorldZOffset = 2.25,
   xrRotationX = 0,
   xrRotationY = 0,
   xrRotationZ = 0,

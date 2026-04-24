@@ -1,37 +1,13 @@
-/**
- * ex1_hints.js — Exercise 1: Color-Space Point-Cloud Visualization
- */
-
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import GUI from "lil-gui";
 import { createXRCompatibleRenderer, setupXRExperience } from "./xr_support.js";
 
-// ============================================================================
-// ASSET PATH
-// ============================================================================
-
 const IMAGE_PATH = "./Assests/grenouille.jpg";
-const VIDEO_PATH = "./Assests/video.mp4";
+const VIDEO_PATH = "./Assests/video-lowQ.mp4";
 
-// ============================================================================
-// PERFORMANCE CONFIGURATION
-// ============================================================================
-// SUBSAMPLE_FACTOR: 1 = every pixel, 4 = every 4th pixel in each direction.
-// Increase for better performance; decrease for higher point count.
-
-const SUBSAMPLE_FACTOR = 4;
+const SUBSAMPLE_FACTOR = 2;
 const SHADOW_SUBSAMPLE_MULTI = 2;
-
-// ============================================================================
-// COLOR SPACE CONFIGURATION
-// ============================================================================
-// Each entry drives: the GUI dropdown, the 3D axis display, and the integer
-// uniform sent to the vertex shader to select the correct position mapping.
-//
-// shaderMode values: RGB=0, HSV=1, CIEXYZ=2, CIExyY=3, CIELAB=4, CIELCH=5
-//
-// axes[0] -> x-axis (right), axes[1] -> y-axis (up), axes[2] -> z-axis (forward)
 
 const COLOR_SPACES = {
   sRGB: {
@@ -96,13 +72,8 @@ const COLOR_SPACES = {
         range: [-100, 100],
       },
     ],
-    // L* on vertical; a* (red-green) on x; b* (yellow-blue) on z.
-    // Neutral greys (a*=b*=0) cluster on the central vertical axis.
-    // Axes run corner-to-corner; a*=0 and b*=0 naturally land at the midpoint (cube centre).
-    // centered: false keeps axis arrows at the cube edge like RGB/HSV.
     positionMapping: { x: "a*", y: "L*", z: "b*" },
     shaderMode: 4,
-    centered: false,
   },
   CIELCH: {
     name: "CIELCH",
@@ -125,15 +96,10 @@ const COLOR_SPACES = {
     // Different from CIELAB (a*/b* polar plane) — C* and H are explicit separate axes.
     positionMapping: { x: "C*", y: "L*", z: "H" },
     shaderMode: 5,
-    centered: false,
   },
 };
 
-// ============================================================================
-// SHADER ASSEMBLY -- reads GLSL from <script type="x-shader/..."> blocks
-// ============================================================================
-
-/** Reads a shader block from the HTML by id. */
+// Reads a shader block from the HTML by id.
 function getShaderSource(id) {
   const el = document.getElementById(id);
   if (!el) throw new Error(`Missing shader element #${id} in the html file`);
@@ -147,17 +113,13 @@ const TEX_FRAG = getShaderSource("texFragmentShader");
 const CLOUD_FRAG = getShaderSource("cloudFragmentShader");
 const SHADOW_FRAG = getShaderSource("shadowFragmentShader");
 
-// Prepend the shared conversion functions to both vertex shaders
+// append the shared conversion functions to both vertex shaders
 const CLOUD_VERT =
   CONVERSIONS_SRC + "\n" + getShaderSource("cloudVertexShader");
 const SHADOW_VERT =
   CONVERSIONS_SRC + "\n" + getShaderSource("shadowVertexShader");
 
-// ============================================================================
-// SCENE HELPERS
-// ============================================================================
-
-/** Semi-transparent bounding cube with wireframe edges and grid floor. */
+// Semi transparent bounding cube with wireframe edges and grid floor.
 function createBoundingCube(parent) {
   const g = new THREE.Group();
   g.name = "boundingCube";
@@ -257,7 +219,7 @@ function createAxes(parent, csKey) {
   // Corner origin for spaces where values run 0→1 (RGB, HSV, CIEXYZ, CIExyY).
   const orig = new THREE.Vector3(-0.5, 0.25, -0.5);
   // Geometric cube centre for symmetric spaces (CIELAB, CIELCH) where axes cross at 0.
-  const cubeCenter = new THREE.Vector3(0, 0.75, 0);
+
   const dirs = [
     new THREE.Vector3(1, 0, 0),
     new THREE.Vector3(0, 1, 0),
@@ -286,18 +248,9 @@ function createAxes(parent, csKey) {
       new THREE.MeshBasicMaterial({ vertexColors: true }),
     );
 
-    let cylPos, lblPos;
-    if (cfg.centered) {
-      // All three axes cross at the cube centre so labels sit just past the +ve cube wall.
-      cylPos = cubeCenter.clone();
-
-      // Position labels slightly beyond the cube edge in the direction of the axis.
-      lblPos = cubeCenter.clone().add(dirs[i].clone().multiplyScalar(0.58));
-    } else {
-      // Axes start from the minimum corner of the cube.
-      cylPos = orig.clone().add(dirs[i].clone().multiplyScalar(0.5)); // position the cylinder **Center** halfway along the axis from the corner
-      lblPos = orig.clone().add(dirs[i].clone().multiplyScalar(1.08)); // position labels slightly beyond the cube edge in the direction of the axis
-    }
+    // Axes start from the minimum corner of the cube.
+    const cylPos = orig.clone().add(dirs[i].clone().multiplyScalar(0.5)); // position the cylinder **Center** halfway along the axis from the corner
+    const lblPos = orig.clone().add(dirs[i].clone().multiplyScalar(1.08)); // position labels slightly beyond the cube edge in the direction of the axis
 
     cyl.position.copy(cylPos);
     cyl.quaternion.copy(rots[i]); // rotate cylinder to align with the correct cube edge
@@ -329,57 +282,15 @@ function updateAxes(parent, csKey) {
   return createAxes(parent, csKey); //recreate axes
 }
 
-// ============================================================================
-// MEDIA HELPERS
-// ============================================================================
-
-/**
- * Reads pixels from a decoded HTMLImageElement and returns a Float32 DataTexture.
- * Storing as Float32 bypasses WebGL's hardware sRGB decode path — the shader
- * receives the raw sRGB values (0–1) directly, which is what all CIE conversions expect.
- */
-function buildDataTexture(image) {
-  const canvas = document.createElement("canvas");
-  canvas.width = image.width;
-  canvas.height = image.height;
-  const context = canvas.getContext("2d");
-  context.drawImage(image, 0, 0); // image, x, y
-
-  const pixels = context.getImageData(0, 0, image.width, image.height).data; //px is a Uint8ClampedArray: [R0,G0,B0,A0, R1,G1,B1,A1, ...]  (0–255 each)
-  const data = new Float32Array(image.width * image.height * 4); // *4 for RGBA channels
-  for (let i = 0; i < image.width * image.height; i++) {
-    data[i * 4] = pixels[i * 4] / 255; // R channel normalized
-    data[i * 4 + 1] = pixels[i * 4 + 1] / 255; // G channel normalized
-    data[i * 4 + 2] = pixels[i * 4 + 2] / 255; // B channel normalized
-    data[i * 4 + 3] = 1.0; // A channel set to 1.0 (fully opaque)
-  }
-
-  const texture = new THREE.DataTexture(
-    data,
-    image.width,
-    image.height,
-    THREE.RGBAFormat,
-    THREE.FloatType,
-  );
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.needsUpdate = true; // mark texture for upload to GPU
-  return texture;
-}
-
+// image loader
 async function loadImageSource(path) {
   const displayTex = await new THREE.TextureLoader().loadAsync(path);
   // NoColorSpace: prevents WebGL hardware sRGB decode — shader receives raw 0-1 sRGB bytes.
-  // Reuse the same UInt8 texture as shaderTex: avoids a second 16 MB Float32 GPU upload
-  // and the JS heap allocation that buildDataTexture would create. The shader gets identical
-  // [0-1] values either way since the JPEG source is 8-bit.
   displayTex.colorSpace = THREE.NoColorSpace;
   return { displayTex, shaderTex: displayTex };
 }
 
-// ============================================================================
-// VIDEO SOURCE HELPER
-// ============================================================================
-
+// video loader
 async function loadVideoSource(path) {
   const video = document.createElement("video");
   video.muted = true;
@@ -400,16 +311,42 @@ async function loadVideoSource(path) {
   return { displayTex: videoTex, shaderTex: videoTex, videoEl: video }; //display texture , shader texture and video element for later use if needed (e.g. to pause/play from GUI)
 }
 
-// ============================================================================
-// POINT GEOMETRY HELPER
-// ============================================================================
+// Shared source-switch logic used by both the desktop GUI and the XR panel.
+async function switchSource(app, toVideo) {
+  let displayTex, shaderTex, w, h;
+  if (toVideo) {
+    const meta = await loadVideoSource(VIDEO_PATH);
+    displayTex = meta.displayTex;
+    shaderTex = meta.shaderTex;
+    app.videoEl = meta.videoEl;
+    w = meta.videoEl.videoWidth;
+    h = meta.videoEl.videoHeight;
+  } else {
+    if (app.videoEl) { app.videoEl.pause(); app.videoEl = null; }
+    const res = await loadImageSource(IMAGE_PATH);
+    displayTex = res.displayTex;
+    shaderTex = res.shaderTex;
+    w = displayTex.image.naturalWidth || displayTex.image.width;
+    h = displayTex.image.naturalHeight || displayTex.image.height;
+  }
+  const planeMesh = app.scene.getObjectByName("displayPlane");
+  if (planeMesh) planeMesh.material.uniforms.tex.value = displayTex;
+  if (app.pointsUniforms) app.pointsUniforms.pointsTex.value = shaderTex;
+  if (app.densityUniforms) app.densityUniforms.pointsTex.value = shaderTex;
+  if (app.shadowUniforms) app.shadowUniforms.pointsTex.value = shaderTex;
+  if (w !== app.sourceW || h !== app.sourceH) {
+    app.sourceW = w; app.sourceH = h;
+    const dc = app.colorSpaceGroup.getObjectByName("pointCloud");
+    const dn = app.colorSpaceGroup.getObjectByName("pointCloudDensity");
+    const sh = app.colorSpaceGroup.getObjectByName("pointCloudShadow");
+    if (dc) { dc.geometry.dispose(); dc.geometry = buildPointGeometry(w, h, SUBSAMPLE_FACTOR); }
+    if (dn) { dn.geometry.dispose(); dn.geometry = buildPointGeometry(w, h, SUBSAMPLE_FACTOR); }
+    if (sh) { sh.geometry.dispose(); sh.geometry = buildPointGeometry(w, h, SUBSAMPLE_FACTOR * SHADOW_SUBSAMPLE_MULTI); }
+    if (app.pointsUniforms) app.pointsUniforms.texSize.value.set(w, h);
+    if (app.densityUniforms) app.densityUniforms.texSize.value.set(w, h);
+  }
+}
 
-/**
- * Builds a BufferGeometry with a `gridUV` attribute whose values are the
- * normalised UV coordinates of every sampled pixel.
- * A dummy `position` attribute is required by Three.js even though all actual
- * positions are computed in the vertex shader.
- */
 function buildPointGeometry(imgW, imgH, subsample) {
   const w = Math.ceil(imgW / subsample);
   const h = Math.ceil(imgH / subsample);
@@ -440,9 +377,194 @@ function buildPointGeometry(imgW, imgH, subsample) {
   return pointGeometry;
 }
 
-// ============================================================================
-// GUI
-// ============================================================================
+// XR-only 3-button control panel (color space / visual mode / source).
+// Positioned below and centered between the image plane and point cloud.
+// Visible only when an XR session is active.
+function createXRControlPanel(app) {
+  const group = new THREE.Group();
+  group.name = "xrControlPanel";
+  group.visible = false;
+  // x=0 centers between image (-0.75) and cloud group (+0.75)
+  // y=0.08 sits just below the bounding cube floor (y=0.25)
+  // z=0.18 brings it slightly in front of the scene so it reads cleanly
+  group.position.set(0, 0.08, 0.18);
+
+  const colorSpaceKeys = Object.keys(COLOR_SPACES);
+  const ps = { csIdx: 0, mode: "direct", source: "image" };
+
+  // Canvas-texture button factory
+  function makeBtn(label, getVal, onPress) {
+    const CW = 512, CH = 148;
+    const canvas = document.createElement("canvas");
+    canvas.width = CW; canvas.height = CH;
+    const ctx = canvas.getContext("2d");
+    const texture = new THREE.CanvasTexture(canvas);
+    const mat = new THREE.MeshBasicMaterial({
+      map: texture, transparent: true, side: THREE.DoubleSide, depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.38, 0.115), mat);
+    let hov = false;
+
+    function draw() {
+      ctx.clearRect(0, 0, CW, CH);
+      const r = 24;
+      // Rounded-rect background
+      ctx.beginPath();
+      ctx.moveTo(r, 0); ctx.lineTo(CW - r, 0); ctx.quadraticCurveTo(CW, 0, CW, r);
+      ctx.lineTo(CW, CH - r); ctx.quadraticCurveTo(CW, CH, CW - r, CH);
+      ctx.lineTo(r, CH); ctx.quadraticCurveTo(0, CH, 0, CH - r);
+      ctx.lineTo(0, r); ctx.quadraticCurveTo(0, 0, r, 0); ctx.closePath();
+      ctx.fillStyle = hov ? "rgba(60,130,255,0.58)" : "rgba(8,10,22,0.82)";
+      ctx.fill();
+      ctx.strokeStyle = hov ? "rgba(140,200,255,1.0)" : "rgba(70,110,200,0.42)";
+      ctx.lineWidth = hov ? 5 : 3;
+      ctx.stroke();
+      // Small label at top
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillStyle = "rgba(150,190,255,0.62)";
+      ctx.font = "bold 22px Arial";
+      ctx.fillText(label, CW / 2, CH * 0.27);
+      // Current-value text at bottom
+      ctx.fillStyle = hov ? "#ffffff" : "#b0d4ff";
+      ctx.font = "bold 38px Arial";
+      ctx.fillText(getVal(), CW / 2, CH * 0.68);
+      texture.needsUpdate = true;
+    }
+    draw();
+
+    return {
+      mesh,
+      setHovered(v) { hov = v; draw(); },
+      press() { onPress(); draw(); },
+    };
+  }
+
+  const SPACING = 0.445;
+
+  const csBtn = makeBtn(
+    "COLOR SPACE",
+    () => colorSpaceKeys[ps.csIdx],
+    () => {
+      ps.csIdx = (ps.csIdx + 1) % colorSpaceKeys.length;
+      const key = colorSpaceKeys[ps.csIdx];
+      const cfg = COLOR_SPACES[key];
+      if (app.pointsUniforms) app.pointsUniforms.colorSpaceMode.value = cfg.shaderMode;
+      if (app.shadowUniforms) app.shadowUniforms.colorSpaceMode.value = cfg.shaderMode;
+      if (app.densityUniforms) app.densityUniforms.colorSpaceMode.value = cfg.shaderMode;
+      updateAxes(app.colorSpaceGroup, key);
+    }
+  );
+  csBtn.mesh.position.set(-SPACING, 0, 0);
+
+  const modeBtn = makeBtn(
+    "VISUAL MODE",
+    () => (ps.mode === "direct" ? "DIRECT" : "DENSITY"),
+    () => {
+      ps.mode = ps.mode === "direct" ? "density" : "direct";
+      const dc = app.colorSpaceGroup.getObjectByName("pointCloud");
+      const dn = app.colorSpaceGroup.getObjectByName("pointCloudDensity");
+      if (dc) dc.visible = ps.mode === "direct";
+      if (dn) dn.visible = ps.mode === "density";
+    }
+  );
+  modeBtn.mesh.position.set(0, 0, 0);
+
+  const srcBtn = makeBtn(
+    "SOURCE",
+    () => ps.source.toUpperCase(),
+    async () => {
+      ps.source = ps.source === "image" ? "video" : "image";
+      await switchSource(app, ps.source === "video");
+    }
+  );
+  srcBtn.mesh.position.set(SPACING, 0, 0);
+
+  group.add(csBtn.mesh, modeBtn.mesh, srcBtn.mesh);
+
+  const btnList = [csBtn, modeBtn, srcBtn];
+  const meshList = btnList.map((b) => b.mesh);
+  const hovered = new Map(btnList.map((b) => [b, false]));
+
+  // Declared early so they're in scope for the selectstart handlers below.
+  const raycaster = new THREE.Raycaster();
+  const tempMtx = new THREE.Matrix4();
+  const tipPos = new THREE.Vector3();
+  const btnPos = new THREE.Vector3();
+  const HAND_HOVER_RADIUS = 0.06;
+
+  // Fresh raycast at press time — avoids any timing dependency on the hover map.
+  // Works for both physical trigger (controller) and pinch (hand), since both
+  // fire selectstart on the same controller object.
+  function pressRay(ctrl) {
+    tempMtx.identity().extractRotation(ctrl.matrixWorld);
+    raycaster.ray.origin.setFromMatrixPosition(ctrl.matrixWorld);
+    raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMtx).normalize();
+    const hits = raycaster.intersectObjects(meshList, false);
+    if (hits.length > 0) {
+      const idx = meshList.indexOf(hits[0].object);
+      if (idx !== -1) btnList[idx].press();
+    }
+  }
+
+  // Shared red ray geometry — child of each controller, follows pose automatically.
+  const rayGeom = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, 0, 0),
+    new THREE.Vector3(0, 0, -3),
+  ]);
+  const rayMat = new THREE.LineBasicMaterial({ color: 0xff2222 });
+
+  // Controllers must be in the scene for Three.js to update matrixWorld each frame.
+  const controllers = [0, 1].map((i) => {
+    const ctrl = app.renderer.xr.getController(i);
+    app.scene.add(ctrl);
+    ctrl.add(new THREE.Line(rayGeom, rayMat));
+    ctrl.addEventListener("selectstart", () => pressRay(ctrl));
+    return ctrl;
+  });
+
+  // Hands in scene so joint matrixWorld values are updated each frame.
+  const hands = [0, 1].map((i) => {
+    const hand = app.renderer.xr.getHand(i);
+    app.scene.add(hand);
+    return hand;
+  });
+
+  // Called every frame from the animation loop.
+  app._xrUpdatePanel = function () {
+    if (!group.visible) return;
+    const next = new Map(btnList.map((b) => [b, false]));
+
+    // Controller ray hover
+    controllers.forEach((ctrl) => {
+      tempMtx.identity().extractRotation(ctrl.matrixWorld);
+      raycaster.ray.origin.setFromMatrixPosition(ctrl.matrixWorld);
+      raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMtx).normalize();
+      const hits = raycaster.intersectObjects(meshList, false);
+      if (hits.length > 0) {
+        const idx = meshList.indexOf(hits[0].object);
+        if (idx !== -1) next.set(btnList[idx], true);
+      }
+    });
+
+    // Hand index-finger-tip proximity hover
+    hands.forEach((hand) => {
+      const indexTip = hand.joints?.["index-finger-tip"];
+      if (!indexTip) return;
+      indexTip.getWorldPosition(tipPos);
+      meshList.forEach((mesh, idx) => {
+        mesh.getWorldPosition(btnPos);
+        if (tipPos.distanceTo(btnPos) < HAND_HOVER_RADIUS) next.set(btnList[idx], true);
+      });
+    });
+
+    btnList.forEach((b) => {
+      const was = hovered.get(b), is = next.get(b);
+      if (was !== is) { hovered.set(b, is); b.setHovered(is); }
+    });
+  };
+
+  return group;
+}
 
 function createGUI(app) {
   const gui = new GUI({ title: "Point Cloud Controls" });
@@ -528,9 +650,10 @@ function createGUI(app) {
         w = metadata.videoEl.videoWidth;
         h = metadata.videoEl.videoHeight;
       } else {
+        // default to image
         if (app.videoEl) {
           app.videoEl.pause();
-          app.videoEl = null;
+          app.videoEl = null; // disable video elements
         }
         const res = await loadImageSource(IMAGE_PATH);
         displayTex = res.displayTex;
@@ -542,10 +665,13 @@ function createGUI(app) {
       const planeMesh = app.scene.getObjectByName("displayPlane");
       if (planeMesh) planeMesh.material.uniforms.tex.value = displayTex;
 
+      // update shader texture uniforms for all point clouds
       if (app.pointsUniforms) app.pointsUniforms.pointsTex.value = shaderTex;
       if (app.densityUniforms) app.densityUniforms.pointsTex.value = shaderTex;
       if (app.shadowUniforms) app.shadowUniforms.pointsTex.value = shaderTex;
 
+      // Only rebuild geometries if the source dimensions have changed
+      // to avoid unnecessary GPU uploads when switching between sources of the same size
       if (w !== app.sourceW || h !== app.sourceH) {
         app.sourceW = w;
         app.sourceH = h;
@@ -567,7 +693,7 @@ function createGUI(app) {
 
   const videoControls = {
     playPause() {
-      if (!app.videoEl) return;
+      if (!app.videoEl) return; // no video loaded, do nothing (image mode)
       app.videoEl.paused ? app.videoEl.play() : app.videoEl.pause();
     },
     seekBack() {
@@ -588,10 +714,6 @@ function createGUI(app) {
 
   return gui;
 }
-
-// ============================================================================
-// EXERCISE 1 INIT
-// ============================================================================
 
 export async function initExercise1() {
   const container = document.getElementById("container");
@@ -714,6 +836,7 @@ export async function initExercise1() {
       transparent: true,
       depthWrite: false, // prevent shadows from occluding each other and the cube walls
       blending: THREE.MultiplyBlending,
+      premultipliedAlpha: true,
     }),
   );
   shadowCloud.name = "pointCloudShadow";
@@ -722,7 +845,7 @@ export async function initExercise1() {
   shadowCloud.visible = true; // visible by default
   colorSpaceGroup.add(shadowCloud);
 
-  // ----- Bounding cube and axes ------------------------------------------
+  // Bounding cube and axes
   createBoundingCube(colorSpaceGroup);
   createAxes(colorSpaceGroup, "sRGB");
 
@@ -762,18 +885,22 @@ export async function initExercise1() {
   );
 
   createGUI(app);
+
+  // XR-only control panel — added to worldRoot so it inherits XR world placement
+  const xrPanel = createXRControlPanel(app);
+  app.worldRoot.add(xrPanel);
+  renderer.xr.addEventListener("sessionstart", () => { xrPanel.visible = true; });
+  renderer.xr.addEventListener("sessionend", () => { xrPanel.visible = false; });
+
   return app;
 }
-
-// ============================================================================
-// ANIMATION LOOP
-// ============================================================================
 
 export function animateExercise1(app) {
   app.renderer.setAnimationLoop(() => {
     if (!app.renderer.xr.isPresenting) {
       app.controls.update();
     }
+    if (app._xrUpdatePanel) app._xrUpdatePanel();
     app.renderer.render(app.scene, app.camera);
   });
 }

@@ -178,14 +178,14 @@
 
       void main() {
         float dist = length(gl_PointCoord - vec2(0.5));
-        if (dist > 0.5) discard;
+        if (dist > 0.5) discard; // round points shaped as circles, not squares
 
-        if (renderMode == 1) {
+        if (renderMode == 1) { // density
           float weight = 1.0 - (dist * 2.0); // linear falloff: 1 at centre, 0 at edge
-          if (weight < 0.15) discard;
-          gl_FragColor = vec4(vColor * weight, weight * 0.2);
+          if (weight < 0.15) discard; // discard very faint fragments to improve performance
+          gl_FragColor = vec4(vColor * weight, weight * 0.2); // color fades to black at edges(discarded)
         } else {
-          gl_FragColor = vec4(vColor, 1.0);
+          gl_FragColor = vec4(vColor, 1.0); // direct point cloud
         }
       }
     </script>
@@ -204,10 +204,13 @@
       varying vec2 vUv;
 
       void main() {
-        gl_FragColor = vec4(texture2D(tex, vUv).rgb, 1.0);
+        gl_FragColor = vec4(texture2D(tex, vUv).rgb, 1.0); // display the input texture as flat 2D image in the scene.
       }
     </script>
 
+    // Shadow shaders: render a dark silhouette of the point cloud onto a
+    horizontal plane below the main cloud // by projecting points downwards and
+    fading them by their brightness (V in HSV, or B in RGB and all CIE models).
     <script type="x-shader/x-vertex" id="shadowVertexShader">
       uniform sampler2D pointsTex;
       uniform int       colorSpaceMode;
@@ -223,9 +226,9 @@
           // HSV: project onto horizontal plane using H and S as x/z
           vec3 hsv = rgb2hsv(srgb);
           pos    = vec3(hsv.x - 0.5, shadowY, hsv.y - 0.5);
-          vAlpha = 0.40 * hsv.z; // fade by V  dark colours cast lighter shadows
+          vAlpha = 0.25 * hsv.z; // fade by V  dark colours cast lighter shadows
         } else {
-          // Default (RGB and all CIE modes): project using R and G as x/z
+          // Default (RGB and all CIE modes): project using R channel and G channel as x/z
           pos    = vec3(srgb.r - 0.5, shadowY, srgb.g - 0.5);
           vAlpha = 0.25 * srgb.b; //fade by b, and lumincance in CIE models
         }

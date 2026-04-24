@@ -1,43 +1,22 @@
-/**
- * ex3.js — Exercise 3: Lambertian Lighting on Elevation Maps
- *
- * Builds on Exercise 2 by adding directional diffuse lighting.
- * Surface normals are derived from heightfield finite differences in the
- * vertex shader. The fragment shader applies:
- *   I = Ia * ka  +  Id * kd * max(0, dot(N, L))
- */
-
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import GUI from "lil-gui";
 import { createXRCompatibleRenderer, setupXRExperience } from "./xr_support.js";
 
-// ============================================================================
-// PATHS & DEFAULTS
-// ============================================================================
-
 const IMAGE_PATH = "./Assests/grenouille.jpg";
-const VIDEO_PATH = "./Assests/video.mp4";
+const VIDEO_PATH = "./Assests/video-lowQ.mp4";
 const SCALE = 0.75;
 const DISCRET = 2;
 const PLANE_W = 4.0;
 
-// ============================================================================
-// COLOUR SPACES
-// ============================================================================
-
 const SPACES = {
-  sRGB: { mode: 0, ch: ["R", "G", "B"] },
-  HSV: { mode: 1, ch: ["H", "S", "V"] },
+  sRGB:   { mode: 0, ch: ["R", "G", "B"] },
+  HSV:    { mode: 1, ch: ["H", "S", "V"] },
   CIEXYZ: { mode: 2, ch: ["X", "Y", "Z"] },
   CIExyY: { mode: 3, ch: ["x", "y", "Y"] },
   CIELAB: { mode: 4, ch: ["L*", "a*", "b*"] },
   CIELCH: { mode: 5, ch: ["L*", "C*", "H"] },
 };
-
-// ============================================================================
-// SHADER HELPERS
-// ============================================================================
 
 function src(id) {
   return document.getElementById(id).textContent.trim();
@@ -48,10 +27,6 @@ const VERT = CONV + "\n" + src("elevationVertexShader");
 const FRAG = src("elevationFragmentShader");
 const TEX_VERT = src("texVertexShader");
 const TEX_FRAG = src("texFragmentShader");
-
-// ============================================================================
-// MEDIA LOADERS
-// ============================================================================
 
 async function loadImage(path) {
   const t = await new THREE.TextureLoader().loadAsync(path);
@@ -70,30 +45,18 @@ async function loadVideo(path) {
   v.playsInline = true;
   v.crossOrigin = "anonymous";
   v.src = path;
-  await new Promise((r) =>
-    v.addEventListener("loadedmetadata", r, { once: true }),
-  );
+  await new Promise((r) => v.addEventListener("loadedmetadata", r, { once: true }));
   const t = new THREE.VideoTexture(v);
   t.colorSpace = THREE.NoColorSpace;
   await v.play();
   return { tex: t, w: v.videoWidth, h: v.videoHeight, el: v };
 }
 
-// ============================================================================
-// INIT
-// ============================================================================
-
 export async function initExercise3() {
-  // ---- Scene, camera, renderer ----
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
 
-  const camera = new THREE.PerspectiveCamera(
-    60,
-    innerWidth / innerHeight,
-    0.1,
-    50,
-  );
+  const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 50);
   camera.position.set(2, 8, 2);
   camera.up.set(0, 0, 1);
 
@@ -107,19 +70,15 @@ export async function initExercise3() {
   controls.enableDamping = true;
   controls.dampingFactor = 0.05;
 
-  // ---- Load image ----
   let { tex, w, h } = await loadImage(IMAGE_PATH);
 
-  // ---- Elevation + lighting uniforms ----
   const uniforms = {
-    tex: { value: tex },
+    tex:            { value: tex },
     scaleElevation: { value: SCALE },
     colorSpaceMode: { value: 0 },
-    channelIndex: { value: 0 },
-    texelSize: { value: new THREE.Vector2(1.0 / w, 1.0 / h) },
-    // Lighting constants (PDF §6.1 + §6.3)
-    // I = Ia*ka + Id*kd*max(0, dot(N,L))
-    // Ambient floor Ia*ka = 0.3 prevents completely dark areas
+    channelIndex:   { value: 0 },
+    texelSize:      { value: new THREE.Vector2(1.0 / w, 1.0 / h) },
+    // I = Ia*ka + Id*kd*max(0,dot(N,L)) — ambient floor at 0.3 prevents fully dark areas
     lightDir: { value: new THREE.Vector3(1.0, 1.0, 1.0).normalize() },
     Id: { value: 1.0 },
     kd: { value: 0.7 },
@@ -136,12 +95,7 @@ export async function initExercise3() {
 
   function makeGeo(w, h) {
     const f = h / w;
-    return new THREE.PlaneGeometry(
-      PLANE_W,
-      PLANE_W * f,
-      Math.floor(w / DISCRET),
-      Math.floor(h / DISCRET),
-    );
+    return new THREE.PlaneGeometry(PLANE_W, PLANE_W * f, Math.floor(w / DISCRET), Math.floor(h / DISCRET));
   }
 
   const mesh = new THREE.Mesh(makeGeo(w, h), mat);
@@ -149,7 +103,7 @@ export async function initExercise3() {
   mesh.rotation.z = Math.PI;
   scene.add(mesh);
 
-  // ---- Flat reference (original texture below) ----
+  // flat reference image sits below the elevation surface
   const refMat = new THREE.ShaderMaterial({
     uniforms: { tex: { value: tex } },
     vertexShader: TEX_VERT,
@@ -162,40 +116,31 @@ export async function initExercise3() {
   refMesh.rotation.z = Math.PI;
   scene.add(refMesh);
 
-  // ---- State ----
-  const app = {
-    scene,
-    camera,
-    renderer,
-    controls,
-    uniforms,
-    mesh,
-    refMesh,
-    refMat,
-    makeGeo,
-    w,
-    h,
-    videoEl: null,
-  };
+  const app = { scene, camera, renderer, controls, uniforms, mesh, refMesh, refMat, makeGeo, w, h, videoEl: null };
 
   Object.assign(
     app,
     setupXRExperience({
-      scene,
-      camera,
-      renderer,
-      controls,
+      scene, camera, renderer, controls,
       title: "Exercise 3",
       description: "Inspect Lambert-lit elevation maps in VR and AR.",
-      arWorldYOffset: -0.35,
-      xrWorldZOffset: -3.25,
+      arWorldYOffset: -1.1,
+      xrWorldZOffset: -3.5,
+      // tilt ~63° so both the flat image and the surface are visible diagonally
+      xrRotationX: -Math.PI * 0.35,
+      xrRotationZ: Math.PI,
+      xrScale: 0.35,
     }),
   );
 
-  // ---- GUI ----
   buildGUI(app);
 
-  // ---- Resize ----
+  // panel lives in scene (not worldRoot) so rotation/scale don't affect its position
+  const xrPanel = createXRControlPanel(app);
+  scene.add(xrPanel);
+  renderer.xr.addEventListener("sessionstart", () => { xrPanel.visible = true; });
+  renderer.xr.addEventListener("sessionend",   () => { xrPanel.visible = false; });
+
   addEventListener("resize", () => {
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
@@ -205,89 +150,230 @@ export async function initExercise3() {
   return app;
 }
 
-// ============================================================================
-// GUI
-// ============================================================================
+function createXRControlPanel(app) {
+  const group = new THREE.Group();
+  group.name = "xrControlPanel";
+  group.visible = false;
+  group.position.set(0, 0.2, -1.0);
 
-function buildGUI(app) {
-  const gui = new GUI({ title: "Lambert Lighting Controls" });
+  const colorSpaceKeys = Object.keys(SPACES);
+  const ps = { csIdx: 0, chIdx: 0 };
 
-  const p = { colorSpace: "sRGB", channel: "R", source: "image" };
-  let chCtrl = null;
+  function makeBtn(label, getVal, onPress) {
+    const CW = 512, CH = 148;
+    const canvas = document.createElement("canvas");
+    canvas.width = CW;
+    canvas.height = CH;
+    const ctx = canvas.getContext("2d");
+    const texture = new THREE.CanvasTexture(canvas);
+    const mat = new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide, depthWrite: false });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.28, 0.1), mat);
+    let hov = false;
 
-  // ---- Color space ----
-  function rebuildChannelCtrl() {
-    if (chCtrl) chCtrl.destroy();
-    const ch = SPACES[p.colorSpace].ch;
-    chCtrl = gui
-      .add(p, "channel", ch)
-      .name("Channel → Height")
-      .onChange((v) => {
-        app.uniforms.channelIndex.value = ch.indexOf(v);
-      });
+    function draw() {
+      ctx.clearRect(0, 0, CW, CH);
+      const r = 24;
+      ctx.beginPath();
+      ctx.moveTo(r, 0); ctx.lineTo(CW - r, 0); ctx.quadraticCurveTo(CW, 0, CW, r);
+      ctx.lineTo(CW, CH - r); ctx.quadraticCurveTo(CW, CH, CW - r, CH);
+      ctx.lineTo(r, CH); ctx.quadraticCurveTo(0, CH, 0, CH - r);
+      ctx.lineTo(0, r); ctx.quadraticCurveTo(0, 0, r, 0);
+      ctx.closePath();
+      ctx.fillStyle = hov ? "rgba(60,130,255,0.58)" : "rgba(8,10,22,0.82)";
+      ctx.fill();
+      ctx.strokeStyle = hov ? "rgba(140,200,255,1.0)" : "rgba(70,110,200,0.42)";
+      ctx.lineWidth = hov ? 5 : 3;
+      ctx.stroke();
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "rgba(150,190,255,0.62)";
+      ctx.font = "bold 22px Arial";
+      ctx.fillText(label, CW / 2, CH * 0.27);
+      ctx.fillStyle = hov ? "#ffffff" : "#b0d4ff";
+      ctx.font = "bold 38px Arial";
+      ctx.fillText(getVal(), CW / 2, CH * 0.68);
+      texture.needsUpdate = true;
+    }
+    draw();
+
+    return {
+      mesh,
+      setHovered(v) { hov = v; draw(); },
+      press()       { onPress(); draw(); },
+      redraw()      { draw(); },
+    };
   }
 
-  gui
-    .add(p, "colorSpace", Object.keys(SPACES))
-    .name("Color Space")
-    .onChange((v) => {
-      app.uniforms.colorSpaceMode.value = SPACES[v].mode;
-      p.channel = SPACES[v].ch[0];
-      app.uniforms.channelIndex.value = 0;
-      rebuildChannelCtrl();
-    });
-  rebuildChannelCtrl();
+  const SPACING = 0.32;
 
-  // ---- Source ----
-  gui
-    .add(p, "source", ["image", "video"])
-    .name("Source")
-    .onChange(async (v) => {
-      if (v === "video") {
-        const res = await loadVideo(VIDEO_PATH);
-        app.videoEl = res.el;
-        app.uniforms.tex.value = res.tex;
-        app.refMat.uniforms.tex.value = res.tex;
-        if (res.w !== app.w || res.h !== app.h) {
-          app.w = res.w;
-          app.h = res.h;
-          app.uniforms.texelSize.value.set(1.0 / res.w, 1.0 / res.h);
-          rebuildGeo(app);
-        }
-      } else {
-        if (app.videoEl) {
-          app.videoEl.pause();
-          app.videoEl = null;
-        }
-        const res = await loadImage(IMAGE_PATH);
-        app.uniforms.tex.value = res.tex;
-        app.refMat.uniforms.tex.value = res.tex;
-        if (res.w !== app.w || res.h !== app.h) {
-          app.w = res.w;
-          app.h = res.h;
-          app.uniforms.texelSize.value.set(1.0 / res.w, 1.0 / res.h);
-          rebuildGeo(app);
-        }
+  const ps2 = { source: "image" };
+
+  // chBtn forward-declared so csBtn's handler can redraw it after a space change
+  let chBtn;
+  const csBtn = makeBtn(
+    "COLOR SPACE",
+    () => colorSpaceKeys[ps.csIdx],
+    () => {
+      ps.csIdx = (ps.csIdx + 1) % colorSpaceKeys.length;
+      ps.chIdx = 0;
+      app.uniforms.colorSpaceMode.value = SPACES[colorSpaceKeys[ps.csIdx]].mode;
+      app.uniforms.channelIndex.value = 0;
+      if (chBtn) chBtn.redraw();
+    },
+  );
+  csBtn.mesh.position.set(-SPACING, 0, 0);
+
+  chBtn = makeBtn(
+    "CHANNEL",
+    () => SPACES[colorSpaceKeys[ps.csIdx]].ch[ps.chIdx],
+    () => {
+      const ch = SPACES[colorSpaceKeys[ps.csIdx]].ch;
+      ps.chIdx = (ps.chIdx + 1) % ch.length;
+      app.uniforms.channelIndex.value = ps.chIdx;
+    },
+  );
+  chBtn.mesh.position.set(0, 0, 0);
+
+  const srcBtn = makeBtn(
+    "SOURCE",
+    () => ps2.source.toUpperCase(),
+    async () => {
+      ps2.source = ps2.source === "image" ? "video" : "image";
+      await switchSource(app, ps2.source === "video");
+    },
+  );
+  srcBtn.mesh.position.set(SPACING, 0, 0);
+
+  group.add(csBtn.mesh, chBtn.mesh, srcBtn.mesh);
+
+  const btnList  = [csBtn, chBtn, srcBtn];
+  const meshList = btnList.map((b) => b.mesh);
+  const hovered  = new Map(btnList.map((b) => [b, false]));
+
+  const raycaster = new THREE.Raycaster();
+  const tempMtx   = new THREE.Matrix4();
+  const tipPos    = new THREE.Vector3();
+  const btnPos    = new THREE.Vector3();
+  const HAND_HOVER_RADIUS = 0.06;
+
+  function pressRay(ctrl) {
+    tempMtx.identity().extractRotation(ctrl.matrixWorld);
+    raycaster.ray.origin.setFromMatrixPosition(ctrl.matrixWorld);
+    raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMtx).normalize();
+    const hits = raycaster.intersectObjects(meshList, false);
+    if (hits.length > 0) {
+      const idx = meshList.indexOf(hits[0].object);
+      if (idx !== -1) btnList[idx].press();
+    }
+  }
+
+  const rayGeom = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, 0, 0),
+    new THREE.Vector3(0, 0, -3),
+  ]);
+  const rayMat = new THREE.LineBasicMaterial({ color: 0xff2222 });
+
+  const controllers = [0, 1].map((i) => {
+    const ctrl = app.renderer.xr.getController(i);
+    app.scene.add(ctrl);
+    ctrl.add(new THREE.Line(rayGeom, rayMat));
+    ctrl.addEventListener("selectstart", () => pressRay(ctrl));
+    return ctrl;
+  });
+
+  const hands = [0, 1].map((i) => {
+    const hand = app.renderer.xr.getHand(i);
+    app.scene.add(hand);
+    return hand;
+  });
+
+  app._xrUpdatePanel = function () {
+    if (!group.visible) return;
+    const next = new Map(btnList.map((b) => [b, false]));
+
+    controllers.forEach((ctrl) => {
+      tempMtx.identity().extractRotation(ctrl.matrixWorld);
+      raycaster.ray.origin.setFromMatrixPosition(ctrl.matrixWorld);
+      raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMtx).normalize();
+      const hits = raycaster.intersectObjects(meshList, false);
+      if (hits.length > 0) {
+        const idx = meshList.indexOf(hits[0].object);
+        if (idx !== -1) next.set(btnList[idx], true);
       }
     });
 
-  // Video transport
+    hands.forEach((hand) => {
+      const indexTip = hand.joints?.["index-finger-tip"];
+      if (!indexTip) return;
+      indexTip.getWorldPosition(tipPos);
+      meshList.forEach((mesh, idx) => {
+        mesh.getWorldPosition(btnPos);
+        if (tipPos.distanceTo(btnPos) < HAND_HOVER_RADIUS) next.set(btnList[idx], true);
+      });
+    });
+
+    btnList.forEach((b) => {
+      const was = hovered.get(b), is = next.get(b);
+      if (was !== is) { hovered.set(b, is); b.setHovered(is); }
+    });
+  };
+
+  return group;
+}
+
+async function switchSource(app, toVideo) {
+  if (toVideo) {
+    const res = await loadVideo(VIDEO_PATH);
+    app.videoEl = res.el;
+    app.uniforms.tex.value = res.tex;
+    app.refMat.uniforms.tex.value = res.tex;
+    if (res.w !== app.w || res.h !== app.h) {
+      app.w = res.w; app.h = res.h;
+      app.uniforms.texelSize.value.set(1.0 / res.w, 1.0 / res.h);
+      rebuildGeo(app);
+    }
+  } else {
+    if (app.videoEl) { app.videoEl.pause(); app.videoEl = null; }
+    const res = await loadImage(IMAGE_PATH);
+    app.uniforms.tex.value = res.tex;
+    app.refMat.uniforms.tex.value = res.tex;
+    if (res.w !== app.w || res.h !== app.h) {
+      app.w = res.w; app.h = res.h;
+      app.uniforms.texelSize.value.set(1.0 / res.w, 1.0 / res.h);
+      rebuildGeo(app);
+    }
+  }
+}
+
+function buildGUI(app) {
+  const gui = new GUI({ title: "Lambert Lighting Controls" });
+  const p = { colorSpace: "sRGB", channel: "R", source: "image" };
+  let chCtrl = null;
+
+  function rebuildChannelCtrl() {
+    if (chCtrl) chCtrl.destroy();
+    const ch = SPACES[p.colorSpace].ch;
+    chCtrl = gui.add(p, "channel", ch).name("Channel → Height").onChange((v) => {
+      app.uniforms.channelIndex.value = ch.indexOf(v);
+    });
+  }
+
+  gui.add(p, "colorSpace", Object.keys(SPACES)).name("Color Space").onChange((v) => {
+    app.uniforms.colorSpaceMode.value = SPACES[v].mode;
+    p.channel = SPACES[v].ch[0];
+    app.uniforms.channelIndex.value = 0;
+    rebuildChannelCtrl();
+  });
+  rebuildChannelCtrl();
+
+  gui.add(p, "source", ["image", "video"]).name("Source").onChange(async (v) => {
+    await switchSource(app, v === "video");
+  });
+
   const vc = {
-    playPause() {
-      if (app.videoEl)
-        app.videoEl.paused ? app.videoEl.play() : app.videoEl.pause();
-    },
-    seekBack() {
-      if (app.videoEl)
-        app.videoEl.currentTime = Math.max(0, app.videoEl.currentTime - 10);
-    },
-    seekForward() {
-      if (app.videoEl)
-        app.videoEl.currentTime = Math.min(
-          app.videoEl.duration,
-          app.videoEl.currentTime + 10,
-        );
-    },
+    playPause()   { if (app.videoEl) app.videoEl.paused ? app.videoEl.play() : app.videoEl.pause(); },
+    seekBack()    { if (app.videoEl) app.videoEl.currentTime = Math.max(0, app.videoEl.currentTime - 10); },
+    seekForward() { if (app.videoEl) app.videoEl.currentTime = Math.min(app.videoEl.duration, app.videoEl.currentTime + 10); },
   };
   gui.add(vc, "seekBack").name("◀◀ -10s");
   gui.add(vc, "playPause").name("⏯ Play / Pause");
@@ -302,15 +388,10 @@ function rebuildGeo(app) {
   app.refMesh.geometry = g.clone();
 }
 
-// ============================================================================
-// LOOP
-// ============================================================================
-
 export function animateExercise3(app) {
   app.renderer.setAnimationLoop(() => {
-    if (!app.renderer.xr.isPresenting) {
-      app.controls.update();
-    }
+    if (!app.renderer.xr.isPresenting) app.controls.update();
+    if (app._xrUpdatePanel) app._xrUpdatePanel();
     app.renderer.render(app.scene, app.camera);
   });
 }
