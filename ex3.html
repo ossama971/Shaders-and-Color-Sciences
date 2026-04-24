@@ -5,15 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Exercise 3 — Lambertian Lighting on Elevation Maps</title>
     <style>
-      body { margin: 0; background: #000; }
+      body {
+        margin: 0;
+        background: #000;
+      }
     </style>
   </head>
   <body>
-
-    <!-- ================================================================== -->
-    <!-- SHARED COLOR-SPACE CONVERSIONS (GLSL)                              -->
-    <!-- ================================================================== -->
-
     <script type="x-shader/x-vertex" id="shaderConversions">
       vec3 srgbToLinear(vec3 c) {
         vec3 low  = c / 12.92;
@@ -99,11 +97,6 @@
       }
     </script>
 
-    <!-- ================================================================== -->
-    <!-- ELEVATION + LIGHTING VERTEX SHADER                                 -->
-    <!-- Computes displaced position AND finite-difference surface normal    -->
-    <!-- ================================================================== -->
-
     <script type="x-shader/x-vertex" id="elevationVertexShader">
       uniform sampler2D tex;
       uniform float     scaleElevation;
@@ -123,12 +116,12 @@
       void main() {
         vUv = uv;
 
-        // ---- displaced position ----
+        // displaced position
         float hC = heightAt(vUv);
         vec3 pos = position;
         pos.z   += hC;
 
-        // ---- finite-difference normal ----
+        // finite-difference normal
         // Sample one texel to the right (+U) and one texel up (+V)
         float hR = heightAt(vUv + vec2(texelSize.x, 0.0));
         float hL = heightAt(vUv - vec2(texelSize.x, 0.0));
@@ -146,11 +139,6 @@
         gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
       }
     </script>
-
-    <!-- ================================================================== -->
-    <!-- ELEVATION + LAMBERTIAN FRAGMENT SHADER                             -->
-    <!-- I = Ia * ka + Id * kd * max(0, dot(N, L))                         -->
-    <!-- ================================================================== -->
 
     <script type="x-shader/x-fragment" id="elevationFragmentShader">
       uniform sampler2D tex;
@@ -175,10 +163,6 @@
       }
     </script>
 
-    <!-- ================================================================== -->
-    <!-- FLAT TEXTURE DISPLAY SHADERS (reference plane — same as ex1/ex2)   -->
-    <!-- ================================================================== -->
-
     <script type="x-shader/x-vertex" id="texVertexShader">
       varying vec2 vUv;
       void main() {
@@ -195,11 +179,10 @@
       }
     </script>
 
-    <!-- ================================================================== -->
-    <!-- MODULE LOADER                                                      -->
-    <!-- ================================================================== -->
-
-    <script async src="https://unpkg.com/es-module-shims@1.3.6/dist/es-module-shims.js"></script>
+    <script
+      async
+      src="https://unpkg.com/es-module-shims@1.3.6/dist/es-module-shims.js"
+    ></script>
     <script type="importmap">
       {
         "imports": {
