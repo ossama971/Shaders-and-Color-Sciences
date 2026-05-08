@@ -208,9 +208,6 @@
       }
     </script>
 
-    // Shadow shaders: render a dark silhouette of the point cloud onto a
-    horizontal plane below the main cloud // by projecting points downwards and
-    fading them by their brightness (V in HSV, or B in RGB and all CIE models).
     <script type="x-shader/x-vertex" id="shadowVertexShader">
       uniform sampler2D pointsTex;
       uniform int       colorSpaceMode;

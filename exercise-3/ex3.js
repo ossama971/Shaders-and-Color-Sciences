@@ -1,10 +1,10 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import GUI from "lil-gui";
-import { createXRCompatibleRenderer, setupXRExperience } from "./xr_support.js";
+import { createXRCompatibleRenderer, setupXRExperience } from "../xr_support.js";
 
-const IMAGE_PATH = "./Assests/grenouille.jpg";
-const VIDEO_PATH = "./Assests/video-lowQ.mp4";
+const IMAGE_PATH = "../assets/grenouille.jpg";
+const VIDEO_PATH = "../assets/video-lowQ.mp4";
 const SCALE = 0.75;
 const DISCRET = 2;
 const PLANE_W = 4.0;
