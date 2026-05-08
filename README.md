@@ -1,50 +1,107 @@
 # Shaders and Color Sciences
 
-> Three browser-based 3D visualization exercises. One confused frog. Six color spaces. Infinite ways to look at light.
+> **Live demo →** https://ossama971.github.io/Shaders-and-Color-Sciences/
 
-This repository contains three progressively complex exercises that explore color perception, colorimetry, and lighting through interactive 3D visualizations. Every pixel of an image is treated as data — scattered into 3D space, folded into mountains, or lit by a simulated sun. No install required: everything runs in the browser as a static [Three.js](https://threejs.org/) ES module app.
+A frog photo walks into six different color spaces. Three exercises take the same source image — sometimes a video — and look at it from increasingly unusual angles: first as a scatter plot of raw color data floating in 3D, then as terrain shaped by a single channel value, then as that terrain under a directional light. All color-space mathematics runs entirely on the GPU in custom GLSL shaders. Nothing to install, nothing to compile — open an HTML file and you are inside. All three exercises are also fully viewable in **VR** and **AR/MR** via WebXR; the scene repositions itself automatically and a floating control panel appears for hands-free navigation.
 
-All three exercises fully support **WebXR** — they can be experienced in **VR** (immersive-vr) or **AR/MR passthrough** (immersive-ar) on any compatible headset. A floating in-scene control panel appears automatically when an XR session starts, supporting both controller ray-casting and hand-tracking (index-finger-tip proximity).
-
-**Live site:** [ossama971.github.io/Shaders-and-Color-Sciences](https://ossama971.github.io/Shaders-and-Color-Sciences/)
+| RGB Point Cloud | Lambertian Elevation |
+|:---:|:---:|
+| ![RGB color-space point cloud](Figures/rgb-img.jpeg) | ![Lambertian-lit elevation map](Figures/lamb-elevation.jpeg) |
 
 ---
 
-## Exercises
+## What's in Here
 
-| # | Exercise | One-liner | Open |
-|---|----------|-----------|------|
-| 1 | [Color-Space Point-Cloud Visualization](#exercise-1--color-space-point-cloud-visualization) | Every image pixel plotted as a 3D point across six color spaces | [→ Open](exercise-1/ex1.html) |
-| 2 | [Color-Driven Elevation Maps](#exercise-2--color-driven-elevation-maps) | A single color channel drives vertex displacement on a mesh | [→ Open](exercise-2/ex2.html) |
-| 3 | [Lambertian Lighting on Elevation Maps](#exercise-3--lambertian-lighting-on-elevation-maps) | Finite-difference surface normals meet the Lambertian reflectance model | [→ Open](exercise-3/ex3.html) |
+The project is three independent exercises that share a common asset (the frog image and a short video clip) and a shared WebXR helper module. Each exercise is a self-contained HTML page you can open on its own. Click a heading below to jump to its full technical breakdown.
+
+**[Exercise 1 — Color-Space Point-Cloud Visualization](#exercise-1--color-space-point-cloud-visualization)**
+Every pixel of the source image or live video stream becomes a 3D point whose position is determined by converting its sRGB value into one of six color spaces — sRGB, HSV, CIEXYZ, CIExyY, CIELAB, CIELCH — entirely on the GPU in a custom GLSL vertex shader. The result is a scatter plot of the image's color distribution that reveals the geometry of how colors cluster in each space. Two render modes are available: direct (opaque round points) and density (additive-blended soft sprites that accumulate where colors overlap). A separate shadow pass projects the cloud's silhouette onto the floor below.
+
+**[Exercise 2 — Color-Driven Elevation Maps](#exercise-2--color-driven-elevation-maps)**
+The same image is stretched over a subdivided plane and each vertex is displaced along Z by the value of one channel extracted from a selected color space. Switching the channel selector changes what drives the terrain height — the L\* channel produces a faithful topography of the scene's luminance; the b\* channel turns the frog's yellow skin into ridges and the green background into valleys. A flat reference image sits below the displaced surface for comparison.
+
+**[Exercise 3 — Lambertian Lighting on Elevation Maps](#exercise-3--lambertian-lighting-on-elevation-maps)**
+Extends the elevation map with physically-based diffuse shading. Per-vertex surface normals are computed on the GPU via a central-difference finite-difference scheme, and the Lambertian irradiance equation `I = Ia·ka + Id·kd·max(0, N·L)` is evaluated in the fragment shader. The same color-space and channel selectors from Exercise 2 stay live, so you can see how different channels produce different surface topographies and different lighting responses at the same time.
+
+---
+
+## Running It
+
+No build step — every page is a static HTML file. A local HTTP server is required because browsers block ES module imports over `file://` and `VideoTexture` needs a proper origin.
+
+```bash
+# Python 3
+python3 -m http.server 8080
+
+# Node
+npx serve .
+```
+
+Then open `http://localhost:8080`. The landing page links to all three exercises.
+
+> **WebXR** needs HTTPS or `localhost`. Chrome on Android and Meta Browser on Quest both work out of the box.
+
+---
+
+## Tech Stack
+
+| | |
+|---|---|
+| Rendering | Three.js r0.182.0 (unpkg CDN, ES module importmap) |
+| Module shim | es-module-shims v1.3.6 (broadens importmap browser support) |
+| Debug GUI | lil-gui v0.19.2 (CDN) |
+| XR entry | WebXR Device API — `VRButton` / `ARButton` |
+| Shaders | Custom GLSL in inline `<script type="x-shader/x-vertex">` blocks |
+| Build | None |
+
+---
+
+## Project Structure
+
+```
+index.html                              # Landing page — links to all three exercises
+xr_support.js                           # Shared WebXR setup (VRButton, ARButton, world placement)
+README.md
+assets/
+  grenouille.jpg                        # Source image (frog)
+  grenouille-gaus.jpg
+  video-lowQ.mp4                        # Source video stream
+Figures/
+  rgb-img.jpeg                          # Screenshot — RGB point cloud
+  lab-img.jpeg                          # Screenshot — CIELAB point cloud
+  elevation.jpeg                        # Screenshot — color-driven elevation map
+  lamb-elevation.jpeg                   # Screenshot — Lambertian-lit elevation map
+  video-rgb.mp4                         # Screen recording — point cloud with video source
+01-point-cloud-visualization/
+  ex1.html                              # Shader definitions: point-cloud, shadow, texture pass-through
+  ex1.js                                # Three.js scene, GUI, XR panel
+02-color-elevation-maps/
+  ex2.html                              # Shader definitions: elevation, texture pass-through
+  ex2.js                                # Three.js scene, GUI, XR panel
+03-lambertian-lighting/
+  ex3.html                              # Shader definitions: elevation + Lambertian lighting
+  ex3.js                                # Three.js scene, GUI, XR panel
+```
 
 ---
 
 ## Exercise 1 — Color-Space Point-Cloud Visualization
 
-### Overview
+**Files:** `01-point-cloud-visualization/ex1.html`, `01-point-cloud-visualization/ex1.js`
 
-Every pixel of an input image (or live video stream) is mapped to a 3D coordinate determined by its value in the selected color space. The result is a **color-space point cloud**: a three-dimensional scatter plot of the image's color distribution that reveals the geometric structure of how colors are clustered in each space.
+| RGB | CIELAB |
+|:---:|:---:|
+| ![RGB point cloud](Figures/rgb-img.jpeg) | ![CIELAB point cloud](Figures/lab-img.jpeg) |
 
-<img src="Figures/rgb-img.jpeg" alt="RGB color-space point cloud of the frog image" width="700"/>
+### Rendering Pipeline
 
-*RGB point cloud — R on X, B on Y, G on Z. Neutral greys cluster along the diagonal; vivid greens from the frog dominate the G axis.*
+Each pixel is represented as a `THREE.Points` vertex carrying a `gridUV` attribute — its normalised `(u, v)` texture coordinate. A custom GLSL vertex shader fetches the pixel's sRGB value from a `sampler2D` uniform, converts it to the target color space entirely on the GPU, and writes the result directly to `gl_Position`. No CPU-side color conversion is performed.
 
-<img src="Figures/lab-img.jpeg" alt="CIELAB color-space point cloud of the frog image" width="700"/>
+A subsample factor (`SUBSAMPLE_FACTOR = 2` by default, UI-adjustable 1–8) controls how many pixels become vertices. At 1/1 every pixel is a point; at 1/8 every 8th pixel is sampled.
 
-*CIELAB point cloud — a\* on X (green↔magenta), b\* on Z (blue↔yellow), L\* on Y. The elongated vertical distribution reflects the wide luminance range of the image.*
+### Color Space Conversions (GLSL)
 
-### Technical Details
-
-**Rendering pipeline**
-
-- Each pixel is represented as a `THREE.Points` vertex with a `gridUV` attribute encoding its normalised texture coordinate `(u, v)`.
-- A custom GLSL vertex shader fetches the pixel's sRGB value from a `sampler2D` uniform, converts it to the target color space entirely on the GPU, and writes the converted channels directly to `gl_Position`. No CPU-side color conversion is performed.
-- A subsample factor (`SUBSAMPLE_FACTOR = 2` by default, UI-adjustable 1–8) controls how many pixels produce vertices. At `1/1` every pixel becomes a point; at `1/8` every 8th pixel is sampled.
-
-**Color space conversions (GLSL)**
-
-All conversions are implemented from scratch in `shaderConversions` — a shared GLSL snippet prepended to both the point-cloud and shadow vertex shaders at runtime.
+All conversions are implemented from scratch in a shared `shaderConversions` GLSL snippet that is prepended at runtime to both the point-cloud and shadow vertex shaders.
 
 | Space | Shader mode | Axes (X / Y / Z) | Key formula |
 |-------|-------------|-------------------|-------------|
@@ -52,10 +109,10 @@ All conversions are implemented from scratch in `shaderConversions` — a shared
 | **HSV** | `1` | H / V / S | Hexagonal sector decomposition via `max(R,G,B)` |
 | **CIEXYZ** | `2` | X/Xn / Y / Z/Zn | sRGB → linear via per-channel gamma (`pow(…, 2.4)`), then IEC 61966-2-1 matrix multiplication |
 | **CIExyY** | `3` | x-chroma / Y-luma / y-chroma | `x = X/(X+Y+Z)`, `y = Y/(X+Y+Z)` |
-| **CIELAB** | `4` | a\* / L\* / b\* | CIE standard: `L* = 116·f(Y/Yn) − 16`, `a* = 500·(f(X/Xn) − f(Y/Yn))`, `b* = 200·(f(Y/Yn) − f(Z/Zn))` using the piecewise `labF` function with `δ = 6/29` |
+| **CIELAB** | `4` | a\* / L\* / b\* | `L* = 116·f(Y/Yn) − 16`, `a* = 500·(f(X/Xn) − f(Y/Yn))`, `b* = 200·(f(Y/Yn) − f(Z/Zn))` with piecewise `labF(t)` and `δ = 6/29` |
 | **CIELCH** | `5` | C\* / L\* / H_norm | `C* = √(a*² + b*²)`, `H = atan2(b*, a*)` normalised to `[0, 1]` |
 
-**sRGB → linear electro-optical transfer function:**
+**sRGB → linear electro-optical transfer:**
 ```glsl
 vec3 srgbToLinear(vec3 c) {
     vec3 low  = c / 12.92;
@@ -63,7 +120,7 @@ vec3 srgbToLinear(vec3 c) {
     return mix(low, high, step(vec3(0.04045), c));
 }
 ```
-The `step`/`mix` construct avoids branching so the conversion runs efficiently on every vertex in parallel.
+The `step`/`mix` pattern avoids branching so every vertex is converted in parallel with no divergence.
 
 **sRGB → CIEXYZ matrix (D65 white point, column-major for GLSL `mat3`):**
 ```glsl
@@ -74,93 +131,72 @@ mat3 m = mat3(
 );
 ```
 
-**Visual modes**
+### Visual Modes
 
 | Mode | Render | Blending |
 |------|--------|----------|
 | **Direct** | Round point sprites, opaque, depth write on | — |
-| **Density** | Larger soft-edged sprites, `AdditiveBlending`, depth write off | Points accumulate: dense color clusters appear brighter |
+| **Density** | Larger soft-edged sprites, `AdditiveBlending`, depth write off | Dense color clusters accumulate brightness |
 
-**Shadow pass**
+### Shadow Pass
 
-A separate, lower-resolution point cloud (shadow subsample = `4×`) is drawn with `MultiplyBlending` onto a horizontal plane at `y = 0.251` (just above the bounding-cube floor). Points are projected downward — x/z driven by R/G (or H/S in HSV mode) — and alpha-faded by brightness (B channel or HSV value), so dark colors cast fainter shadows.
+A separate lower-resolution cloud (`shadowSubsample = 4×`) is drawn with `MultiplyBlending` onto a horizontal floor plane at `y = 0.251`. Points project downward — x/z driven by R/G (or H/S in HSV mode) — and their alpha fades by brightness (B channel or HSV value), so darker colors cast lighter shadows.
 
-**3D scene**
+### Media Pipeline
 
-- **Left panel:** input texture displayed on a `PlaneGeometry` via a pass-through `ShaderMaterial`.
-- **Right panel:** point cloud inside a semi-transparent bounding cube with gradient cylinder axes (color-coded per channel) and `THREE.Sprite` axis labels generated from a `<canvas>`.
+Both a static JPEG and an MP4 video stream are supported as sources. Switching replaces `pointsTex` in all shader uniforms without rebuilding the scene graph; geometry is only rebuilt when the new source has different pixel dimensions.
 
-**Media pipeline**
-
-Both a static JPEG and an MP4 video stream are supported. Switching sources at runtime replaces `pointsTex` in all three shader uniforms without re-building the scene graph; geometry is only rebuilt if the new source has different pixel dimensions.
-
-`THREE.NoColorSpace` is set on all textures so the WebGL hardware sRGB decode is bypassed — the shader receives raw 0–1 sRGB bytes as expected by the conversion functions.
-
-**XR control panel**
-
-A `THREE.Group` of three canvas-texture buttons (`COLOR SPACE` / `VISUAL MODE` / `SOURCE`) is placed in the XR world root. Interaction is handled by:
-- Controller ray-casting (`Raycaster` against button `PlaneGeometry` meshes)
-- Hand tracking: index-finger-tip world-position proximity (`< 0.06 m`)
+`THREE.NoColorSpace` is applied to all textures so the WebGL hardware sRGB decode is bypassed — the shader receives raw 0–1 sRGB bytes as expected by the conversion functions.
 
 ---
 
 ## Exercise 2 — Color-Driven Elevation Maps
 
-### Overview
+**Files:** `02-color-elevation-maps/ex2.html`, `02-color-elevation-maps/ex2.js`
 
-A flat `PlaneGeometry` is displaced along its Z axis by a single color-channel value extracted from the input image. Switching the channel or color space changes what drives the terrain height, making the image topology visible as a 3D surface.
+![Color-driven elevation map](Figures/elevation.jpeg)
 
-<img src="Figures/elevation.jpeg" alt="CIELAB L* elevation map of the frog image" width="700"/>
+### Vertex Displacement
 
-*Elevation map driven by the CIELAB L\* (luminance) channel. Bright regions of the frog become peaks; dark shadow areas sink into valleys.*
+The mesh is a `PlaneGeometry` with `⌊w/DISCRET⌋ × ⌊h/DISCRET⌋` segments (`DISCRET = 2`), rendered with a `ShaderMaterial`. In the vertex shader, the height scalar is produced by:
 
-### Technical Details
-
-**Vertex displacement**
-
-The mesh (`PlaneGeometry` with `w/DISCRET × h/DISCRET` segments, `DISCRET = 2`) is rendered with a `ShaderMaterial`. In the vertex shader, the height scalar is computed by:
-
-1. Sampling the input texture at the fragment's UV.
-2. Converting the sRGB value to the selected color space via the shared `extractChannel` function.
-3. Adding `h * scaleElevation` to `position.z` (`SCALE = 0.75`).
+1. Sampling the input texture at the vertex UV.
+2. Passing the sRGB sample through `extractChannel(srgb, colorSpaceMode, channelIndex)`.
+3. Adding `h * scaleElevation` to `position.z` (`scaleElevation = 0.75`).
 
 ```glsl
 float h = extractChannel(srgb, colorSpaceMode, channelIndex);
 pos.z  += h * scaleElevation;
 ```
 
-**`extractChannel` normalisation**
+### `extractChannel` Normalisation
 
-Each color space maps its channels to `[0, 1]` for use as a height scalar:
+Each space maps its three channels to `[0, 1]` for use as a height scalar:
 
 | Space | Ch 0 | Ch 1 | Ch 2 | Normalisation |
 |-------|------|------|------|---------------|
-| sRGB | R | G | B | Already `[0,1]` |
-| HSV | H | S | V | Already `[0,1]` |
+| sRGB | R | G | B | Already `[0, 1]` |
+| HSV | H | S | V | Already `[0, 1]` |
 | CIEXYZ | X | Y | Z | X÷0.95047, Y÷1.0, Z÷1.08883 (D65 white point) |
-| CIExyY | x | y | Y | x and y naturally `[0, ~0.8]`; Y already `[0,1]` |
-| CIELAB | L\* | a\* | b\* | L\*÷100; a\* mapped `(a*+128)/255`; b\* mapped `(b*+128)/255` |
-| CIELCH | L\* | C\* | H | L\*÷100; C\*÷150 clamped; H already normalised `[0,1]` |
+| CIExyY | x | y | Y | x and y naturally `[0, ~0.8]`; Y `[0, 1]` |
+| CIELAB | L\* | a\* | b\* | L\*÷100; a\* → `(a*+128)/255`; b\* → `(b*+128)/255` |
+| CIELCH | L\* | C\* | H | L\*÷100; C\*÷150 clamped; H already `[0, 1]` |
 
-**Reference image**
+### Reference Image
 
-A second, flat `PlaneGeometry` with a pass-through fragment shader is positioned at `z = −1.5` below the displaced surface, providing a ground-truth color reference to compare against the elevation surface above.
-
-**GUI / XR controls:** `COLOR SPACE` and `CHANNEL` selectors (the channel dropdown rebuilds itself when the color space changes), `SOURCE` toggle, and video seek/play-pause buttons.
+A second flat `PlaneGeometry` with a pass-through fragment shader sits at `z = −1.5` below the displaced surface. It shows the original image colors so the elevated geometry can be compared directly against the unmodified source.
 
 ---
 
 ## Exercise 3 — Lambertian Lighting on Elevation Maps
 
-### Overview
+**Files:** `03-lambertian-lighting/ex3.html`, `03-lambertian-lighting/ex3.js`
 
-Exercise 3 extends the elevation map with physically-based **Lambertian diffuse shading**. Per-vertex surface normals are computed on the GPU via a central-difference finite-difference scheme, then the classical `I = Ia·ka + Id·kd·max(0, N·L)` irradiance equation is evaluated in the fragment shader.
+![Lambertian-lit elevation map](Figures/lamb-elevation.jpeg)
 
-### Technical Details
+### Surface Normal Computation (Vertex Shader)
 
-**Surface normal computation (vertex shader)**
-
-Four height samples are fetched at `±texelSize` offsets in U and V:
+Four height samples are fetched at one-texel offsets in each direction:
 
 ```glsl
 float hR = heightAt(vUv + vec2(texelSize.x, 0.0));
@@ -173,11 +209,9 @@ vec3 tangentV = vec3(0.0, 2.0 * texelSize.y, hU - hD);
 vNormal = normalize(cross(tangentU, tangentV));
 ```
 
-The two tangent vectors (along U and along V) are crossed to give the surface normal. Because only the direction matters, the texel-space step size cancels after `normalize()`.
+The two tangent vectors span the local surface patch. Their cross product gives the surface normal, and because only direction matters, the texel-space step size cancels after `normalize()`. `texelSize = vec2(1/w, 1/h)` is updated whenever the source changes.
 
-`texelSize = vec2(1/texWidth, 1/texHeight)` is kept in sync with source dimensions and updated when switching between the image and video source.
-
-**Lambertian irradiance (fragment shader)**
+### Lambertian Irradiance (Fragment Shader)
 
 ```glsl
 float I = Ia * ka + Id * kd * max(0.0, dot(N, L));
@@ -192,95 +226,33 @@ gl_FragColor = vec4(baseColor * I, 1.0);
 | `Ia` | `0.3` | Ambient light intensity |
 | `ka` | `1.0` | Ambient reflectance coefficient |
 
-The ambient floor (`Ia·ka = 0.3`) ensures no surface region goes fully black regardless of light angle.
-
-The base color comes directly from the input texture (`texture2D(tex, vUv).rgb`), so the surface retains the original image's colors modulated by the computed irradiance.
+The ambient floor (`Ia·ka = 0.3`) prevents any surface region from going fully black regardless of light angle. The base color is sampled directly from the input texture so the image's original colors are preserved and modulated by the irradiance.
 
 ---
 
-## WebXR & VR Support
+## WebXR and VR
 
-Every exercise ships with full **WebXR** integration via `xr_support.js`, a shared module that wraps Three.js's `VRButton` and `ARButton` helpers.
+All three exercises ship the same WebXR integration via `xr_support.js`. VR and AR/MR entry buttons are injected into the page automatically.
 
-### Session modes
+### Session Modes
 
 | Mode | Behaviour |
 |------|-----------|
-| **Desktop** | Standard orbit camera + `OrbitControls` |
-| **VR** (immersive-vr) | Camera zeroed; world root repositioned and scaled for comfortable viewing distance |
-| **AR/MR** (immersive-ar) | Scene background cleared (passthrough); world root placed at eye level with a Y offset so the content sits in front of the user |
+| **Desktop** | Standard orbit camera with `OrbitControls` |
+| **VR** (immersive-vr) | Camera zeroed; world root repositioned and scaled for comfortable viewing |
+| **AR/MR** (immersive-ar) | Scene background cleared for passthrough; world root placed at eye level |
 
-### In-headset controls
+### In-Headset Controls
 
-A `THREE.Group` of canvas-texture buttons floats in the scene during an XR session. Each button is rendered on a `PlaneGeometry` with a `CanvasTexture` and highlights on hover.
+A `THREE.Group` of canvas-texture buttons floats in the scene during an XR session. Each button renders on a `PlaneGeometry` with a `CanvasTexture` and highlights on hover. Two interaction methods are supported simultaneously:
 
-**Interaction methods:**
-- **Controller:** ray-cast from `getController(i)` along the −Z forward vector using `THREE.Raycaster`. `selectstart` fires the press.
-- **Hand tracking:** `getHand(i)` — index-finger-tip joint world position checked within a 6 cm proximity sphere against each button center.
+- **Controller ray-casting** — `Raycaster` fires along the −Z forward vector of each `getController(i)`; `selectstart` triggers the press.
+- **Hand tracking** — `getHand(i)` index-finger-tip joint world position is tested within a 6 cm proximity sphere around each button center.
 
-The panel is added to `worldRoot` (Exercise 1) or directly to the `scene` (Exercises 2 & 3) so that world-space transforms and XR session state are handled correctly.
-
-### XR world placement per exercise
+### World Placement Per Exercise
 
 | Exercise | `xrScale` | `xrWorldZOffset` | `arWorldYOffset` | Notes |
 |----------|-----------|------------------|------------------|-------|
-| 1 | 1.0 | −2.25 | −0.25 | Comfortable arms-length viewing of the point cloud |
-| 2 | 0.35 | −3.5 | −1.1 | Tilted ~63° (`xrRotationX = −0.35π`, `xrRotationZ = π`) so both flat reference and elevated surface are visible |
+| 1 | 1.0 | −2.25 | −0.25 | Point cloud at comfortable arms-length |
+| 2 | 0.35 | −3.5 | −1.1 | Tilted ~63° so both flat reference and elevated surface are visible |
 | 3 | 0.35 | −3.5 | −1.1 | Same tilt as Exercise 2 to expose the lighting gradient |
-
----
-
-## Tech Stack
-
-| Component | Version / Source |
-|-----------|-----------------|
-| [Three.js](https://threejs.org/) | `0.182.0` (CDN via unpkg) |
-| [lil-gui](https://lil-gui.georgealways.com/) | `0.19.2` (CDN via unpkg) |
-| [es-module-shims](https://github.com/guybedford/es-module-shims) | `1.3.6` (import map polyfill) |
-| WebXR | Browser-native via Three.js `VRButton` / `ARButton` |
-| GLSL shaders | Inline `<script type="x-shader/x-vertex">` blocks in each HTML file |
-
-No build step. No bundler. No Node.js. Open the HTML file and go.
-
----
-
-## Repository Structure
-
-```
-├── index.html             # Landing page — links to all three exercises
-├── xr_support.js          # Shared WebXR setup (VRButton, ARButton, world placement)
-├── exercise-1/
-│   ├── ex1.html           # Shader definitions (point-cloud, shadow, texture pass-through)
-│   └── ex1.js             # Three.js scene, GUI, XR panel
-├── exercise-2/
-│   ├── ex2.html           # Shader definitions (elevation, texture pass-through)
-│   └── ex2.js             # Three.js scene, GUI, XR panel
-├── exercise-3/
-│   ├── ex3.html           # Shader definitions (elevation + Lambertian lighting)
-│   └── ex3.js             # Three.js scene, GUI, XR panel
-├── assets/
-│   ├── grenouille.jpg     # Source image (frog)
-│   ├── grenouille-gaus.jpg
-│   └── video-lowQ.mp4     # Source video stream
-└── Figures/
-    ├── rgb-img.jpeg        # Screenshot — RGB point cloud
-    ├── lab-img.jpeg        # Screenshot — CIELAB point cloud
-    ├── elevation.jpeg      # Screenshot — elevation map (CIELAB L*)
-    └── video-rgb.mp4       # Screen recording — point cloud with video source
-```
-
----
-
-## Running Locally
-
-Because the exercises use ES modules and `VideoTexture`, they require an HTTP server (browsers block `file://` module imports).
-
-```bash
-# Python 3
-python3 -m http.server 8080
-
-# Node.js (npx)
-npx serve .
-```
-
-Then open `http://localhost:8080`.
