@@ -2,17 +2,15 @@
 
 > **Live demo →** https://ossama971.github.io/Shaders-and-Color-Sciences/
 
-A frog photo walks into six different color spaces. Three exercises take the same source image — sometimes a video — and look at it from increasingly unusual angles: first as a scatter plot of raw color data floating in 3D, then as terrain shaped by a single channel value, then as that terrain under a directional light. All color-space mathematics runs entirely on the GPU in custom GLSL shaders. Nothing to install, nothing to compile — open an HTML file and you are inside. All three exercises are also fully viewable in **VR** and **AR/MR** via WebXR; the scene repositions itself automatically and a floating control panel appears for hands-free navigation.
+Three exercises that take an image — or a live video stream — and interrogate it through the lens of color science and 3D rendering. The first exercise scatters every pixel into 3D space according to its position in one of six color spaces, revealing the geometric structure of a color distribution. The second displaces a mesh by a single color channel, turning image data into terrain. The third adds physically-based Lambertian shading to that terrain, computing surface normals on the GPU from finite differences. All color-space mathematics runs in custom GLSL shaders with no CPU-side processing. Nothing to install, nothing to compile — open an HTML file and it runs. All three exercises are also viewable in **VR** and **AR/MR** via WebXR.
 
-| RGB Point Cloud | Lambertian Elevation |
-|:---:|:---:|
-| ![RGB color-space point cloud](Figures/rgb-img.jpeg) | ![Lambertian-lit elevation map](Figures/lamb-elevation.jpeg) |
+![Demo — RGB point cloud with video source](Figures/demo.gif)
 
 ---
 
 ## What's in Here
 
-The project is three independent exercises that share a common asset (the frog image and a short video clip) and a shared WebXR helper module. Each exercise is a self-contained HTML page you can open on its own. Click a heading below to jump to its full technical breakdown.
+Three independent exercises that share a common image asset, a short video clip, and a shared WebXR helper module. Each exercise is a self-contained HTML page you can open on its own. Click a heading below to jump to its full technical breakdown.
 
 **[Exercise 1 — Color-Space Point-Cloud Visualization](#exercise-1--color-space-point-cloud-visualization)**
 Every pixel of the source image or live video stream becomes a 3D point whose position is determined by converting its sRGB value into one of six color spaces — sRGB, HSV, CIEXYZ, CIExyY, CIELAB, CIELCH — entirely on the GPU in a custom GLSL vertex shader. The result is a scatter plot of the image's color distribution that reveals the geometry of how colors cluster in each space. Two render modes are available: direct (opaque round points) and density (additive-blended soft sprites that accumulate where colors overlap). A separate shadow pass projects the cloud's silhouette onto the floor below.
