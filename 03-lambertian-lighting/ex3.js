@@ -18,15 +18,12 @@ const SPACES = {
   CIELCH: { mode: 5, ch: ["L*", "C*", "H"] },
 };
 
-function src(id) {
-  return document.getElementById(id).textContent.trim();
+async function loadGlsl(path) {
+  const url = new URL(path, import.meta.url);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to load shader: ${path}`);
+  return res.text();
 }
-
-const CONV = src("shaderConversions");
-const VERT = CONV + "\n" + src("elevationVertexShader");
-const FRAG = src("elevationFragmentShader");
-const TEX_VERT = src("texVertexShader");
-const TEX_FRAG = src("texFragmentShader");
 
 async function loadImage(path) {
   const t = await new THREE.TextureLoader().loadAsync(path);
@@ -53,6 +50,16 @@ async function loadVideo(path) {
 }
 
 export async function initExercise3() {
+  const [CONV, elevVert, elevFrag, TEX_VERT, TEX_FRAG] = await Promise.all([
+    loadGlsl('../shared/colorConversions.glsl'),
+    loadGlsl('./shaders/elevation.vert.glsl'),
+    loadGlsl('./shaders/elevation.frag.glsl'),
+    loadGlsl('./shaders/tex.vert.glsl'),
+    loadGlsl('./shaders/tex.frag.glsl'),
+  ]);
+  const VERT = CONV + '\n' + elevVert;
+  const FRAG = elevFrag;
+
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
 
