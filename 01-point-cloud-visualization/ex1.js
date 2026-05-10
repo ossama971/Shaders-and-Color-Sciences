@@ -99,25 +99,12 @@ const COLOR_SPACES = {
   },
 };
 
-// Reads a shader block from the HTML by id.
-function getShaderSource(id) {
-  const el = document.getElementById(id);
-  if (!el) throw new Error(`Missing shader element #${id} in the html file`);
-  return el.textContent.trim();
+async function loadGlsl(path) {
+  const url = new URL(path, import.meta.url);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to load shader: ${path}`);
+  return res.text();
 }
-
-// Read raw sources from HTML blocks
-const CONVERSIONS_SRC = getShaderSource("shaderConversions"); // convert in GLSL for faster GPU execution especially for video mode
-const TEX_VERT = getShaderSource("texVertexShader");
-const TEX_FRAG = getShaderSource("texFragmentShader");
-const CLOUD_FRAG = getShaderSource("cloudFragmentShader");
-const SHADOW_FRAG = getShaderSource("shadowFragmentShader");
-
-// append the shared conversion functions to both vertex shaders
-const CLOUD_VERT =
-  CONVERSIONS_SRC + "\n" + getShaderSource("cloudVertexShader");
-const SHADOW_VERT =
-  CONVERSIONS_SRC + "\n" + getShaderSource("shadowVertexShader");
 
 // Semi transparent bounding cube with wireframe edges and grid floor.
 function createBoundingCube(parent) {
@@ -716,6 +703,20 @@ function createGUI(app) {
 }
 
 export async function initExercise1() {
+  const [CONV, cloudVert, cloudFrag, shadowVert, shadowFrag, TEX_VERT, TEX_FRAG] =
+    await Promise.all([
+      loadGlsl('../shared/colorConversions.glsl'),
+      loadGlsl('./shaders/cloud.vert.glsl'),
+      loadGlsl('./shaders/cloud.frag.glsl'),
+      loadGlsl('./shaders/shadow.vert.glsl'),
+      loadGlsl('./shaders/shadow.frag.glsl'),
+      loadGlsl('./shaders/tex.vert.glsl'),
+      loadGlsl('./shaders/tex.frag.glsl'),
+    ]);
+  const CLOUD_VERT  = CONV + '\n' + cloudVert;
+  const SHADOW_VERT = CONV + '\n' + shadowVert;
+  const CLOUD_FRAG  = cloudFrag;
+  const SHADOW_FRAG = shadowFrag;
   const container = document.getElementById("container");
 
   const scene = new THREE.Scene();
