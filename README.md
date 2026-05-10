@@ -25,7 +25,7 @@ Extends the elevation map with physically-based diffuse shading. Per-vertex surf
 
 ## Running It
 
-No build step — every page is a static HTML file. A local HTTP server is required because browsers block ES module imports over `file://` and `VideoTexture` needs a proper origin.
+No build step — every page is a static HTML file. A local HTTP server is required because browsers block ES module imports over `file://`, GLSL shader files are loaded via `fetch()`, and `VideoTexture` needs a proper origin.
 
 ```bash
 # Python 3
@@ -49,7 +49,7 @@ Then open `http://localhost:8080`. The landing page links to all three exercises
 | Module shim | es-module-shims v1.3.6 (broadens importmap browser support) |
 | Debug GUI | lil-gui v0.19.2 (CDN) |
 | XR entry | WebXR Device API — `VRButton` / `ARButton` |
-| Shaders | Custom GLSL in inline `<script type="x-shader/x-vertex">` blocks |
+| Shaders | Separate `.glsl` files loaded at runtime via `fetch()` — one shared color-conversion library, co-located exercise-specific shaders |
 | Build | None |
 
 ---
@@ -60,6 +60,8 @@ Then open `http://localhost:8080`. The landing page links to all three exercises
 index.html                              # Landing page — links to all three exercises
 xr_support.js                           # Shared WebXR setup (VRButton, ARButton, world placement)
 README.md
+shared/
+  colorConversions.glsl                 # Color-space GLSL library shared by all exercises
 assets/
   grenouille.jpg                        # Source image (frog)
   grenouille-gaus.jpg
@@ -71,21 +73,62 @@ Figures/
   lamb-elevation.jpeg                   # Screenshot — Lambertian-lit elevation map
   video-rgb.mp4                         # Screen recording — point cloud with video source
 01-point-cloud-visualization/
-  ex1.html                              # Shader definitions: point-cloud, shadow, texture pass-through
-  ex1.js                                # Three.js scene, GUI, XR panel
+  ex1.html                              # Entry point
+  ex1.js                                # Three.js scene, GUI, XR panel; loads shaders via fetch()
+  shaders/
+    cloud.vert.glsl                     # Point-cloud vertex shader — positions pixels in color space
+    cloud.frag.glsl                     # Point-cloud fragment shader — direct and density render modes
+    shadow.vert.glsl                    # Shadow projection vertex shader
+    shadow.frag.glsl                    # Shadow fragment shader
+    tex.vert.glsl                       # Texture pass-through vertex shader
+    tex.frag.glsl                       # Texture pass-through fragment shader
 02-color-elevation-maps/
-  ex2.html                              # Shader definitions: elevation, texture pass-through
-  ex2.js                                # Three.js scene, GUI, XR panel
+  ex2.html                              # Entry point
+  ex2.js                                # Three.js scene, GUI, XR panel; loads shaders via fetch()
+  shaders/
+    elevation.vert.glsl                 # Height-displacement vertex shader
+    elevation.frag.glsl                 # Flat-texture fragment shader
+    tex.vert.glsl
+    tex.frag.glsl
 03-lambertian-lighting/
-  ex3.html                              # Shader definitions: elevation + Lambertian lighting
-  ex3.js                                # Three.js scene, GUI, XR panel
+  ex3.html                              # Entry point
+  ex3.js                                # Three.js scene, GUI, XR panel; loads shaders via fetch()
+  shaders/
+    elevation.vert.glsl                 # Height-displacement + finite-difference surface normals
+    elevation.frag.glsl                 # Lambertian irradiance fragment shader
+    tex.vert.glsl
+    tex.frag.glsl
+```
+
+### Shader Loading
+
+Each exercise's JavaScript module contains a `loadGlsl(path)` helper that resolves paths relative to the module via `import.meta.url` and fetches the file:
+
+```js
+async function loadGlsl(path) {
+  const url = new URL(path, import.meta.url);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to load shader: ${path}`);
+  return res.text();
+}
+```
+
+At init time all shaders are fetched in parallel. The shared `colorConversions.glsl` is prepended to every vertex shader that performs color-space conversion:
+
+```js
+const [CONV, vertBody, ...] = await Promise.all([
+  loadGlsl('../shared/colorConversions.glsl'),
+  loadGlsl('./shaders/cloud.vert.glsl'),
+  ...
+]);
+const CLOUD_VERT = CONV + '\n' + vertBody;
 ```
 
 ---
 
 ## Exercise 1 — Color-Space Point-Cloud Visualization
 
-**Files:** `01-point-cloud-visualization/ex1.html`, `01-point-cloud-visualization/ex1.js`
+**Files:** `01-point-cloud-visualization/ex1.html`, `01-point-cloud-visualization/ex1.js`, `01-point-cloud-visualization/shaders/`
 
 | RGB | CIELAB |
 |:---:|:---:|
@@ -99,7 +142,7 @@ A subsample factor (`SUBSAMPLE_FACTOR = 2` by default, UI-adjustable 1–8) cont
 
 ### Color Space Conversions (GLSL)
 
-All conversions are implemented from scratch in a shared `shaderConversions` GLSL snippet that is prepended at runtime to both the point-cloud and shadow vertex shaders.
+All conversions are implemented from scratch in `shared/colorConversions.glsl`, which is fetched once and prepended at runtime to both the point-cloud and shadow vertex shaders.
 
 | Space | Shader mode | Axes (X / Y / Z) | Key formula |
 |-------|-------------|-------------------|-------------|
@@ -150,7 +193,7 @@ Both a static JPEG and an MP4 video stream are supported as sources. Switching r
 
 ## Exercise 2 — Color-Driven Elevation Maps
 
-**Files:** `02-color-elevation-maps/ex2.html`, `02-color-elevation-maps/ex2.js`
+**Files:** `02-color-elevation-maps/ex2.html`, `02-color-elevation-maps/ex2.js`, `02-color-elevation-maps/shaders/`
 
 ![Color-driven elevation map](Figures/elevation.jpeg)
 
@@ -188,7 +231,7 @@ A second flat `PlaneGeometry` with a pass-through fragment shader sits at `z = �
 
 ## Exercise 3 — Lambertian Lighting on Elevation Maps
 
-**Files:** `03-lambertian-lighting/ex3.html`, `03-lambertian-lighting/ex3.js`
+**Files:** `03-lambertian-lighting/ex3.html`, `03-lambertian-lighting/ex3.js`, `03-lambertian-lighting/shaders/`
 
 ![Lambertian-lit elevation map](Figures/lamb-elevation.jpeg)
 
